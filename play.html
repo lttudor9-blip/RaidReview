@@ -2791,6 +2791,43 @@ const AudioEngine = (() => {
     };
 })();
 
+// --- MISSED QUESTIONS REPORT ---
+// Each student logs their own answers under players/{id}/qlog; the host
+// totals them at the end of the game so the teacher knows what to reteach.
+function escHTML(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function missedQuestionsHTML(d) {
+    const qs = d.questions || DEFAULT_QUESTIONS;
+    const players = Object.values(d.players || {});
+    const rows = qs.map((q, i) => {
+        let right = 0, wrong = 0; const picks = {};
+        players.forEach(p => {
+            const e = p.qlog?.[`q${i}`]; if(!e) return;
+            right += e.r || 0; wrong += e.w || 0;
+            Object.entries(e.m || {}).forEach(([k, n]) => { picks[k] = (picks[k] || 0) + n; });
+        });
+        const total = right + wrong;
+        const top = Object.entries(picks).sort((a, b) => b[1] - a[1])[0];
+        return { q, total, wrong, pct: total ? Math.round(wrong / total * 100) : 0, topWrong: top ? q.answers[+top[0].slice(1)] : null };
+    }).filter(r => r.wrong > 0).sort((a, b) => b.pct - a.pct || b.wrong - a.wrong).slice(0, 5);
+    if(!rows.length) return '';
+    return `
+        <div style="max-width:900px; margin:0 auto 2rem; border:2px solid #333; border-radius:16px; overflow:hidden; background:rgba(255,255,255,0.03); text-align:left;">
+            <div style="padding:0.75rem 1.25rem; border-bottom:1px solid #333;">
+                <span style="font-family:'Orbitron',sans-serif; font-size:0.9rem; color:#ffa502; letter-spacing:0.1em;">MOST MISSED QUESTIONS</span>
+            </div>
+            ${rows.map(r => `
+            <div style="padding:0.75rem 1.25rem; display:flex; align-items:center; gap:1rem; border-bottom:1px solid #1a1a2e;">
+                <div style="font-family:'Orbitron',sans-serif; font-size:1.3rem; font-weight:900; min-width:4.5rem; text-align:center; color:${r.pct >= 50 ? '#ff4757' : '#ffa502'};">${r.pct}%</div>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:700; font-size:1.05rem;">${escHTML(r.q.text)}</div>
+                    <div style="font-size:0.85rem; color:#888;">Answer: <span style="color:#2ed573;">${escHTML(r.q.answers[r.q.correct])}</span>${r.topWrong ? ` &bull; Most picked wrong: <span style="color:#ff4757;">${escHTML(r.topWrong)}</span>` : ''} &bull; missed ${r.wrong} of ${r.total} tries</div>
+                </div>
+            </div>`).join('')}
+        </div>`;
+}
+
 // --- FIREBASE UTILS ---
 // IMPORTANT: App name MUST be 'raidreview' to match the landing page (index.html).
 // Firebase Auth persists tokens per app-name. The landing page signs teachers in
@@ -3850,6 +3887,8 @@ const HostModule = (() => {
                     </div>
                 </div>
                 
+                ${missedQuestionsHTML(d)}
+
                 <button onclick="location.reload()" style="font-family:'Orbitron',sans-serif; font-size:1.3rem; font-weight:700; padding:1rem 3rem; border:3px solid ${titleColor}; color:${titleColor}; background:transparent; border-radius:12px; cursor:pointer; transition:all 0.2s;">
                     NEW RAID
                 </button>
@@ -4390,6 +4429,26 @@ const PlayerModule = (() => {
     let isDeadLocal = false, deathStreak = 0, inputLocked = false, targeting = false, pendingAbility = null;
     let lastActionTime = 0; // Anti-cheat: hard cooldown between actions
     let questionQueue = []; // Shuffle queue to prevent repeats
+
+    // Per-question answer log, feeds the host's missed-questions report
+    let qLog = {};
+    function logAnswer(q, pickedIdx) {
+        if(q?._idx === undefined || !roomCode || !playerId) return;
+        const key = `q${q._idx}`;
+        if(!qLog[key]) {
+            const saved = localState?.players?.[playerId]?.qlog?.[key];
+            qLog[key] = { r: saved?.r || 0, w: saved?.w || 0, m: { ...(saved?.m || {}) } };
+        }
+        const e = qLog[key];
+        if(pickedIdx === q.correct) e.r++;
+        else { e.w++; e.m[`a${pickedIdx}`] = (e.m[`a${pickedIdx}`] || 0) + 1; }
+        updateData(`games/${roomCode}/players/${playerId}/qlog/${key}`, e);
+    }
+    // Light up the right answer after a miss so students learn from it
+    function revealCorrect(gridId, shuffleMap, q) {
+        const btn = document.querySelector(`#${gridId} button:nth-child(${shuffleMap.indexOf(q.correct) + 1})`);
+        if(btn) { btn.classList.add('correct'); btn.style.opacity = '1'; }
+    }
     let specialCooldownLeft = 0; // Questions remaining until special is available
     let infectionIntervalId = null; // Local infection UI update loop
     let deathQuestionQueue = []; // Separate queue for death questions
@@ -4961,7 +5020,7 @@ const PlayerModule = (() => {
         
         // Refill queue when empty (shuffle all questions)
         if(questionQueue.length === 0) {
-            questionQueue = [...qs];
+            questionQueue = qs.map((q, i) => ({ ...q, _idx: i }));
             // Fisher-Yates shuffle
             for(let i = questionQueue.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -5006,6 +5065,7 @@ const PlayerModule = (() => {
         if(btn) { btn.style.opacity = '1'; } // Keep clicked button fully visible
         // Map display position back to original answer index
         const originalIdx = answerShuffleMap[idx];
+        logAnswer(currentQuestion, originalIdx);
         if(originalIdx === currentQuestion.correct) {
             btn.classList.add('correct'); ComboSystem.incrementCombo();
             flash('#2ed573', 150); hitMarker(); spawnDamage('CORRECT!', {color:'#2ed573', damage: 1000}); AudioEngine.sfxCorrect();
@@ -5055,6 +5115,7 @@ const PlayerModule = (() => {
             setTimeout(() => { hide('panel-question'); show('panel-action'); updateActionUI(); }, 500);
         } else {
             btn.classList.add('incorrect'); ComboSystem.breakCombo();
+            revealCorrect('answers-grid', answerShuffleMap, currentQuestion);
             flash('#ff4757', 200); shake(); spawnDamage('WRONG!', {color:'#ff4757', damage: 500}); AudioEngine.sfxWrong();
             sessionStats.wrongAnswers++;
             const me = localState.players[playerId];
@@ -5081,7 +5142,7 @@ const PlayerModule = (() => {
                     }
                 }
             }
-            setTimeout(loadQuestion, 1000);
+            setTimeout(loadQuestion, 2000);
         }
     }
 
@@ -5435,13 +5496,14 @@ const PlayerModule = (() => {
         loadDeathQ();
     }
     let deathShuffleMap = [0,1,2,3];
+    let deathRevealLock = false;
     
     function loadDeathQ() {
         const qs = localState?.questions || DEFAULT_QUESTIONS;
         
         // Refill queue when empty (shuffle all questions)
         if(deathQuestionQueue.length === 0) {
-            deathQuestionQueue = [...qs];
+            deathQuestionQueue = qs.map((q, i) => ({ ...q, _idx: i }));
             // Fisher-Yates shuffle
             for(let i = deathQuestionQueue.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -5465,7 +5527,8 @@ const PlayerModule = (() => {
         
         [0,1,2,3].forEach(displayIdx => {
             const originalIdx = deathShuffleMap[displayIdx];
-            document.querySelector(`#death-answers-grid button:nth-child(${displayIdx+1})`).innerText = deathQuestion.answers[originalIdx];
+            const dbtn = document.querySelector(`#death-answers-grid button:nth-child(${displayIdx+1})`);
+            dbtn.innerText = deathQuestion.answers[originalIdx]; dbtn.className = 'answer-btn'; dbtn.style.opacity = '';
         });
         [1,2,3].forEach(i => { const el=document.getElementById(`reboot-seg-${i}`); if(el) el.style.background = i<=deathStreak?'#3742fa':'#1a1a2e'; });
         // Show/hide segments based on difficulty revive requirement
@@ -5473,7 +5536,9 @@ const PlayerModule = (() => {
         [1,2,3].forEach(i => { const el=document.getElementById(`reboot-seg-${i}`); if(el) { el.style.display = i <= needed ? '' : 'none'; el.style.background = i<=deathStreak?'#3742fa':'#1a1a2e'; } });
     }
     async function answerDeath(idx) {
+        if(deathRevealLock) return;
         const originalIdx = deathShuffleMap[idx];
+        logAnswer(deathQuestion, originalIdx);
         if(originalIdx === deathQuestion.correct) {
             deathStreak++; flash('#2ed573', 150);
             if(deathStreak >= getDiff().reviveStreak) {
@@ -5490,7 +5555,11 @@ const PlayerModule = (() => {
         } else {
             deathStreak = 0;
             ComboSystem.resetCombo(); // BUG FIX: reset combo on death-screen wrong answer
-            flash('#ff4757', 200); shake(); loadDeathQ();
+            flash('#ff4757', 200); shake();
+            document.querySelector(`#death-answers-grid button:nth-child(${idx+1})`)?.classList.add('incorrect');
+            revealCorrect('death-answers-grid', deathShuffleMap, deathQuestion);
+            deathRevealLock = true;
+            setTimeout(() => { deathRevealLock = false; if(isDeadLocal && !isPermaDead) loadDeathQ(); }, 1500);
         }
     }
 
