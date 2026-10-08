@@ -1623,9 +1623,7 @@
                 
                 <!-- BOSS ARENA -->
                 <div id="boss-arena" class="host-arena flex-1 flex items-center justify-center relative min-h-0">
-                    <div id="boss-container" class="boss-container flex items-center justify-center h-full">
-                        <img id="host-boss-img" src="https://i.imgur.com/2E3BETA.png" class="max-h-[40vh] w-auto object-contain" style="filter: drop-shadow(0 20px 60px rgba(0,0,0,0.8)); animation: float 3s ease-in-out infinite;">
-                    </div>
+                    <canvas id="host-boss-canvas" class="absolute inset-0 w-full h-full" style="z-index:10;"></canvas>
                     <div id="host-damage-layer" class="absolute inset-0 pointer-events-none z-20"></div>
                 </div>
                 
@@ -1891,6 +1889,7 @@
         </div>
     </div>
 
+<script src="./bosses.js"></script>
 <script type="module">
 /* ============================================ */
 /* RAID REVIEW - Single File Bundle             */
@@ -2076,10 +2075,10 @@ const BOSS_PHASES = {
 const TIMER_ENRAGE = { speedMult: 2.0, damageMult: 2.0 };
 
 const WAVES = [
-    { name: "WASTELAND RAIDER", hp: 25000, scale: 1500, timeLimit: 120000, img: "https://i.imgur.com/2E3BETA.png", attacks: [{ name: "RAIDER STRIKE", type: "targeted", targetCount: 2, damagePercent: 0.15, cooldown: 45000, warningTime: 5000, warningText: "RAIDER IS TARGETING", icon: "!" }] },
-    { name: "ELITE ENFORCER", hp: 45000, scale: 2000, timeLimit: 150000, img: "https://i.imgur.com/0HB8hSb.png", attacks: [{ name: "SUPPRESSING FIRE", type: "targeted", targetCount: 3, damagePercent: 0.18, cooldown: 35000, warningTime: 4000, warningText: "ENFORCER IS TARGETING", icon: "!" }, { name: "HEAVY STRIKE", type: "targeted", targetCount: 1, damagePercent: 0.28, cooldown: 60000, warningTime: 4000, warningText: "HEAVY STRIKE INCOMING", icon: "!!" }] },
-    { name: "APEX CONSTRUCT", hp: 65000, scale: 3000, timeLimit: 180000, img: "https://i.imgur.com/womxFfo.png", attacks: [{ name: "SYSTEM PULSE", type: "aoe", damagePercent: 0.10, cooldown: 30000, warningTime: 3000, warningText: "SYSTEM PULSE CHARGING", icon: "*" }, { name: "LOCK ON", type: "lowest_hp", targetCount: 1, damagePercent: 0.35, cooldown: 50000, warningTime: 4000, warningText: "LOCK ON ACQUIRED", icon: "!" }] },
-    { name: "OMEGA WEAPON", hp: 100000, scale: 4000, timeLimit: 180000, img: "https://i.imgur.com/zlNufo0.png", attacks: [{ name: "OMEGA BARRAGE", type: "targeted", targetCount: 4, damagePercent: 0.25, cooldown: 20000, warningTime: 3000, warningText: "OMEGA BARRAGE INCOMING", icon: "!!" }, { name: "ANNIHILATE", type: "lowest_hp", targetCount: 1, damagePercent: 0.50, cooldown: 35000, warningTime: 3500, warningText: "ANNIHILATE TARGET", icon: "X" }, { name: "EXTINCTION WAVE", type: "aoe", damagePercent: 0.22, cooldown: 45000, warningTime: 4000, warningText: "EXTINCTION WAVE CHARGING", icon: "X" }] }
+    { name: "WASTELAND RAIDER", hp: 25000, scale: 1500, timeLimit: 120000, boss: "raider", attacks: [{ name: "RAIDER STRIKE", type: "targeted", targetCount: 2, damagePercent: 0.15, cooldown: 45000, warningTime: 5000, warningText: "RAIDER IS TARGETING", icon: "!" }] },
+    { name: "ELITE ENFORCER", hp: 45000, scale: 2000, timeLimit: 150000, boss: "enforcer", attacks: [{ name: "SUPPRESSING FIRE", type: "targeted", targetCount: 3, damagePercent: 0.18, cooldown: 35000, warningTime: 4000, warningText: "ENFORCER IS TARGETING", icon: "!" }, { name: "HEAVY STRIKE", type: "targeted", targetCount: 1, damagePercent: 0.28, cooldown: 60000, warningTime: 4000, warningText: "HEAVY STRIKE INCOMING", icon: "!!" }] },
+    { name: "APEX CONSTRUCT", hp: 65000, scale: 3000, timeLimit: 180000, boss: "construct", attacks: [{ name: "SYSTEM PULSE", type: "aoe", damagePercent: 0.10, cooldown: 30000, warningTime: 3000, warningText: "SYSTEM PULSE CHARGING", icon: "*" }, { name: "LOCK ON", type: "lowest_hp", targetCount: 1, damagePercent: 0.35, cooldown: 50000, warningTime: 4000, warningText: "LOCK ON ACQUIRED", icon: "!" }] },
+    { name: "OMEGA WEAPON", hp: 100000, scale: 4000, timeLimit: 180000, boss: "omega", attacks: [{ name: "OMEGA BARRAGE", type: "targeted", targetCount: 4, damagePercent: 0.25, cooldown: 20000, warningTime: 3000, warningText: "OMEGA BARRAGE INCOMING", icon: "!!" }, { name: "ANNIHILATE", type: "lowest_hp", targetCount: 1, damagePercent: 0.50, cooldown: 35000, warningTime: 3500, warningText: "ANNIHILATE TARGET", icon: "X" }, { name: "EXTINCTION WAVE", type: "aoe", damagePercent: 0.22, cooldown: 45000, warningTime: 4000, warningText: "EXTINCTION WAVE CHARGING", icon: "X" }] }
 ];
 
 // --- CINEMATIC CONTENT ---
@@ -2117,6 +2116,46 @@ const CINEMATICS = {
         '"No... NO... NOOOOO&#8212;" &#8212; Omega Weapon'
     ]
 };
+
+// --- HOST BOSS (code-drawn, see bosses.js) ---
+// Owns the boss canvas in the host arena and feeds it game events.
+const HostBoss = (() => {
+    let boss = null, wave = 0, lastHp = null;
+    function typeFor(d) {
+        return d?.enemy?.boss || WAVES[(d?.currentWave || 1) - 1]?.boss || 'raider';
+    }
+    function ensure(type, waveNum, withIntro) {
+        if (boss && wave === waveNum) return boss;
+        const cv = document.getElementById('host-boss-canvas');
+        if (!cv || !window.BossRenderer) return null;
+        if (boss) boss.destroy();
+        boss = BossRenderer.create(cv, type);
+        wave = waveNum; lastHp = null;
+        if (withIntro) boss.intro();
+        return boss;
+    }
+    // Called from the host render on every game update
+    function sync(d) {
+        const waveNum = d.currentWave || 1;
+        const b = ensure(typeFor(d), waveNum, d.status === 'ACTIVE' && wave !== 0);
+        if (!b || !d.enemy) return;
+        const hp = d.enemy.health, max = d.enemy.maxHealth || 1;
+        b.setHealth(hp / max);
+        const phase = d.enemy.phase || 'NORMAL';
+        b.setPhase(d.timerEnraged && phase === 'NORMAL' ? 'ENRAGED' : phase);
+        if (lastHp !== null && hp < lastHp) {
+            const dmg = lastHp - hp;
+            b.hit(dmg, { crit: dmg >= 5000 });
+        }
+        lastHp = hp;
+    }
+    return {
+        sync,
+        get: () => boss,
+        windUp: (ms) => boss && boss.windUp(ms),
+        release: () => boss && boss.release()
+    };
+})();
 
 // --- HOST CINEMATIC ENGINE ---
 const HostCinematic = (() => {
@@ -2164,8 +2203,12 @@ const HostCinematic = (() => {
         }
     }
     
+    // Live boss shown inside a cinematic; destroyed when the next one starts or it ends
+    let cinBoss = null;
+    function setCinBoss(b) { if (cinBoss) cinBoss.destroy(); cinBoss = b; return b; }
+
     // === BOSS INTRO SEQUENCE ===
-    function playIntro(waveIndex, bossImg, callback) {
+    function playIntro(waveIndex, bossType, callback) {
         const data = CINEMATICS.intros[waveIndex];
         if (!data) { if (callback) callback(); return; }
         
@@ -2186,7 +2229,7 @@ const HostCinematic = (() => {
                 <div id="cin-tagline" style="font-family:'Rajdhani',sans-serif; font-size:1.5rem; color:#aaa; font-style:italic; opacity:0;">
                     ${data.tagline}
                 </div>
-                <img id="cin-boss-img" src="${bossImg}" style="max-height:35vh; margin-top:2rem; opacity:0; filter:drop-shadow(0 0 40px ${data.color}80);">
+                <canvas id="cin-boss-canvas" style="width:min(70vh,92vw); height:min(42vh,60vw); margin-top:1rem; opacity:0;"></canvas>
                 <div id="cin-hp-bar-wrap" style="width:60%; max-width:600px; margin-top:2rem; opacity:0;">
                     <div style="height:12px; background:rgba(255,255,255,0.1); border-radius:6px; overflow:hidden;">
                         <div id="cin-hp-fill" style="height:100%; width:0%; background:linear-gradient(90deg, ${data.color}, ${data.color}cc); border-radius:6px; transition:width 1s ease;"></div>
@@ -2199,7 +2242,7 @@ const HostCinematic = (() => {
         const waveEl = document.getElementById('cin-wave-num');
         const nameEl = document.getElementById('cin-boss-name');
         const tagEl = document.getElementById('cin-tagline');
-        const imgEl = document.getElementById('cin-boss-img');
+        const bossCanvas = document.getElementById('cin-boss-canvas');
         const hpWrap = document.getElementById('cin-hp-bar-wrap');
         const hpFill = document.getElementById('cin-hp-fill');
         const particles = document.getElementById('cin-particles');
@@ -2224,7 +2267,10 @@ const HostCinematic = (() => {
         
         // Beat 4: Boss image rises (2200ms)
         setTimeout(() => {
-            if (imgEl) { imgEl.style.animation = 'introBossRise 1s cubic-bezier(0.34,1.56,0.64,1) forwards'; }
+            if (bossCanvas && window.BossRenderer) {
+                bossCanvas.style.opacity = '1';
+                setCinBoss(BossRenderer.create(bossCanvas, bossType, { backdrop: false })).intro(1200);
+            }
             spawnParticles(particles, 30, data.color, 'rise');
         }, 2200);
         
@@ -2237,7 +2283,7 @@ const HostCinematic = (() => {
         // Beat 6: Fade out and start (4500ms)
         setTimeout(() => {
             hideOverlay();
-            setTimeout(() => { if (callback) callback(); }, 600);
+            setTimeout(() => { setCinBoss(null); if (callback) callback(); }, 600);
         }, 4800);
     }
     
@@ -2246,16 +2292,10 @@ const HostCinematic = (() => {
         const data = CINEMATICS.intros[waveIndex];
         if (!data) { if (callback) callback(); return; }
         
-        const bossImg = document.getElementById('host-boss-img');
-        if (!bossImg) { if (callback) callback(); return; }
-        
-        // Stop idle animation
-        bossImg.style.animation = 'none';
-        void bossImg.offsetWidth;
-        
-        // Apply death animation based on wave
-        bossImg.style.animation = `${data.deathStyle} ${data.deathStyle === 'deathMeltdown' ? '3' : '2'}s ease-out forwards`;
-        
+        const boss = HostBoss.get();
+        if (!boss) { if (callback) callback(); return; }
+        boss.die();
+
         // Screen effects timed to death style
         AudioEngine.sfxBossDeath();
         flash('#ffffff', 200);
@@ -2283,7 +2323,7 @@ const HostCinematic = (() => {
     }
     
     // === TAUNT / TRANSITION SCREEN ===
-    function playTaunt(waveIndex, nextBossImg, callback) {
+    function playTaunt(waveIndex, nextBossType, callback) {
         const taunt = CINEMATICS.taunts[waveIndex];
         if (!taunt) { if (callback) callback(); return; }
         const nextIntro = CINEMATICS.intros[waveIndex + 1];
@@ -2295,7 +2335,7 @@ const HostCinematic = (() => {
         c.innerHTML = `
             <div style="text-align:center; position:relative; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden;">
                 <!-- Next boss looming in background -->
-                <img id="cin-taunt-boss" src="${nextBossImg}" style="position:absolute; max-height:70vh; opacity:0; filter:brightness(0.3) blur(2px); z-index:0;">
+                <canvas id="cin-taunt-boss" style="position:absolute; width:min(75vh,95vw); height:min(75vh,95vw); opacity:0; filter:brightness(0.3) blur(2px); z-index:0;"></canvas>
                 
                 <div style="position:relative; z-index:1; max-width:800px;">
                     <div id="cin-taunt-emoji" style="font-size:5rem; opacity:0; margin-bottom:1rem;">${taunt.emoji}</div>
@@ -2344,7 +2384,10 @@ const HostCinematic = (() => {
         
         // Boss looms in background
         setTimeout(() => {
-            if (bossPreview) { bossPreview.style.animation = 'tauntBossLoom 2s ease forwards'; }
+            if (bossPreview) {
+                if (window.BossRenderer) setCinBoss(BossRenderer.create(bossPreview, nextBossType, { backdrop: false }));
+                bossPreview.style.animation = 'tauntBossLoom 2s ease forwards';
+            }
         }, 3200);
         
         // "INCOMING" label
@@ -2360,7 +2403,7 @@ const HostCinematic = (() => {
         // Hold for a beat, then fade out
         setTimeout(() => {
             hideOverlay();
-            setTimeout(() => { if (callback) callback(); }, 600);
+            setTimeout(() => { setCinBoss(null); if (callback) callback(); }, 600);
         }, 6500);
     }
     
@@ -3530,7 +3573,7 @@ const HostModule = (() => {
             roomCode, status: 'LOBBY', currentWave: 1,
             callsignMode: callsignOn,
             difficulty: gameDifficulty,
-            enemy: { name: wave.name, health: wave.hp, maxHealth: wave.hp, img: wave.img, phase: 'NORMAL' },
+            enemy: { name: wave.name, health: wave.hp, maxHealth: wave.hp, boss: wave.boss, phase: 'NORMAL' },
             players: {}, questions: cachedQuestions
         };
         await setData(`games/${roomCode}`, data);
@@ -3631,19 +3674,7 @@ const HostModule = (() => {
             show('status-display');
         }
         
-        const img = document.getElementById('host-boss-img');
-        if(img) {
-            // Detect wave change - reset boss image fully
-            const currentDisplayWave = parseInt(img.dataset.wave || '0');
-            if(d.status === 'ACTIVE' && d.currentWave !== currentDisplayWave) {
-                img.dataset.wave = d.currentWave;
-                img.src = d.enemy.img;
-                // Force full reset of all inline styles from death animations
-                img.style.cssText = 'filter: drop-shadow(0 20px 60px rgba(0,0,0,0.8)); animation: float 3s ease-in-out infinite;';
-            } else if(img.src !== d.enemy.img) {
-                img.src = d.enemy.img;
-            }
-        }
+        HostBoss.sync(d);
 
         // Enhanced Vitals Grid
         const pList = Object.values(d.players||{});
@@ -3765,16 +3796,10 @@ const HostModule = (() => {
     
     function showHostDefeat(d) {
         AudioEngine.sfxDefeat();
-        const bossImg = document.getElementById('host-boss-img');
-        
-        // Boss victory pose - pulses and grows
-        if(bossImg) {
-            bossImg.style.animation = 'none';
-            bossImg.style.transition = 'all 1s ease';
-            bossImg.style.transform = 'scale(1.2)';
-            bossImg.style.filter = 'drop-shadow(0 0 60px rgba(255,71,87,0.8)) brightness(1.2)';
-        }
-        
+        // Boss victory roar
+        const winner = HostBoss.get();
+        if(winner) { winner.windUp(700); setTimeout(() => winner.release(), 700); }
+
         flash('#ff4757', 800);
         shake('heavy');
         
@@ -4115,10 +4140,12 @@ const HostModule = (() => {
             targets: targetData, warningTime: attack.warningTime, timestamp: Date.now(), resolveAt: Date.now() + attack.warningTime
         });
         
+        HostBoss.windUp(attack.warningTime);
         setTimeout(() => applyDamage(targetData), attack.warningTime);
     }
 
     async function applyDamage(targets) {
+        HostBoss.release();
         if(localState?.status !== 'ACTIVE') return;
         const updates = { bossAttack: null };
         const idome = localState?.ironDome;
@@ -4251,7 +4278,7 @@ const HostModule = (() => {
         
         // Play boss death animation, then taunt, then celebration + next wave
         HostCinematic.playDeath(currentWaveIndex, () => {
-            HostCinematic.playTaunt(currentWaveIndex, WAVES[next-1].img, () => {
+            HostCinematic.playTaunt(currentWaveIndex, WAVES[next-1].boss, () => {
                 startWaveCelebration(next);
             });
         });
@@ -4291,10 +4318,10 @@ const HostModule = (() => {
         // Brief celebration pause (4 seconds), then boss intro cinematic
         setTimeout(async () => {
             const nwIdx = nextWaveNum - 1;
-            HostCinematic.playIntro(nwIdx, wave.img, async () => {
+            HostCinematic.playIntro(nwIdx, wave.boss, async () => {
                 await updateData(`games/${roomCode}`, {
                     status: 'ACTIVE', currentWave: nextWaveNum,
-                    enemy: { name: wave.name, health: scaledHp, maxHealth: scaledHp, img: wave.img, phase: 'NORMAL' },
+                    enemy: { name: wave.name, health: scaledHp, maxHealth: scaledHp, boss: wave.boss, phase: 'NORMAL' },
                     bossAttack: null, timerEnraged: null, waveCelebration: null
                 });
                 currentPhase = 'NORMAL'; timerEnraged = false;
@@ -4377,12 +4404,12 @@ const HostModule = (() => {
             const shuffleOn = document.getElementById('shuffle-toggle')?.checked !== false;
             
             // Play boss intro cinematic on host, then start combat
-            HostCinematic.playIntro(0, wave.img, async () => {
+            HostCinematic.playIntro(0, wave.boss, async () => {
                 await updateData(`games/${roomCode}`, { 
                     status: 'ACTIVE', 
                     raidStartTime: Date.now(),
                     shuffleAnswers: shuffleOn,
-                    enemy: { name: wave.name, health: hp, maxHealth: hp, img: wave.img, phase: 'NORMAL' },
+                    enemy: { name: wave.name, health: hp, maxHealth: hp, boss: wave.boss, phase: 'NORMAL' },
                     ...playerUpdates
                 });
                 currentPhase = 'NORMAL'; timerEnraged = false;
