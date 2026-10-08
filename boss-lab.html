@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boss Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #06060b; color: #fff; font-family: 'Rajdhani', sans-serif; padding: 24px 16px 48px; }
+    h1 { font-family: 'Orbitron', sans-serif; font-weight: 900; letter-spacing: 0.08em; font-size: clamp(1.4rem, 4vw, 2.2rem); text-align: center; }
+    .sub { text-align: center; color: #8888aa; margin: 6px 0 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 20px; max-width: 1200px; margin: 0 auto; }
+    .card { border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; background: radial-gradient(ellipse at 50% 30%, #12121e 0%, #08080e 70%); overflow: hidden; }
+    .card header { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 18px 0; gap: 8px; }
+    .card h2 { font-family: 'Orbitron', sans-serif; font-size: 1.05rem; letter-spacing: 0.06em; }
+    .phase { font-family: 'Orbitron', sans-serif; font-size: 0.7rem; letter-spacing: 0.1em; padding: 3px 8px; border-radius: 6px; border: 1px solid currentColor; }
+    canvas { width: 100%; aspect-ratio: 1 / 1; display: block; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 16px; }
+    button { font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.06em; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); color: #ddd; cursor: pointer; }
+    button:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    button.danger { border-color: rgba(255,71,87,0.5); color: #ff4757; }
+    label { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #8888aa; flex: 1 1 100%; }
+    input[type=range] { flex: 1; accent-color: #ffa502; }
+</style>
+</head>
+<body>
+<h1>BOSS LAB</h1>
+<p class="sub">All four Raid Review bosses, drawn in code. Try the buttons to see each reaction.</p>
+<div class="grid" id="grid"></div>
+
+<script src="./bosses.js"></script>
+<script>
+const PHASES = ['NORMAL', 'ENRAGED', 'DESPERATE'];
+const PHASE_COLORS = { NORMAL: '#8888aa', ENRAGED: '#ffa502', DESPERATE: '#ff4757' };
+const grid = document.getElementById('grid');
+
+BossRenderer.types.forEach(type => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+        <header><h2></h2><span class="phase">NORMAL</span></header>
+        <canvas></canvas>
+        <div class="controls">
+            <button data-a="hit">HIT</button>
+            <button data-a="crit">CRIT</button>
+            <button data-a="attack">WIND-UP + ATTACK</button>
+            <button data-a="phase">NEXT PHASE</button>
+            <button data-a="die" class="danger">DEFEAT</button>
+            <button data-a="reset">RESET</button>
+            <label>HP <input type="range" min="0" max="100" value="100"> <span class="hpv">100%</span></label>
+        </div>`;
+    grid.appendChild(card);
+    const boss = BossRenderer.create(card.querySelector('canvas'), type);
+    const h2 = card.querySelector('h2');
+    h2.textContent = boss.name; h2.style.color = boss.color;
+    const phaseEl = card.querySelector('.phase');
+    const slider = card.querySelector('input');
+    const hpv = card.querySelector('.hpv');
+    let phase = 0, windTimer = null;
+
+    function setPhase(i) {
+        phase = i;
+        boss.setPhase(PHASES[i]);
+        phaseEl.textContent = PHASES[i];
+        phaseEl.style.color = PHASE_COLORS[PHASES[i]];
+    }
+    slider.addEventListener('input', () => {
+        const v = slider.value / 100;
+        boss.setHealth(v);
+        hpv.textContent = slider.value + '%';
+    });
+    card.querySelector('.controls').addEventListener('click', e => {
+        const a = e.target.dataset?.a;
+        if (!a) return;
+        if (a === 'hit') boss.hit(800);
+        if (a === 'crit') boss.hit(6000, { crit: true });
+        if (a === 'attack') { clearTimeout(windTimer); boss.windUp(2500); windTimer = setTimeout(() => boss.release(), 2500); }
+        if (a === 'phase') setPhase((phase + 1) % PHASES.length);
+        if (a === 'die') { clearTimeout(windTimer); boss.die(() => {}); }
+        if (a === 'reset') { clearTimeout(windTimer); boss.reset(); setPhase(0); slider.value = 100; hpv.textContent = '100%'; }
+    });
+});
+</script>
+</body>
+</html>
