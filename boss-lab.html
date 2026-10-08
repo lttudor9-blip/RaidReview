@@ -42,6 +42,7 @@ BossRenderer.types.forEach(type => {
         <header><h2></h2><span class="phase">NORMAL</span></header>
         <canvas></canvas>
         <div class="controls">
+            <button data-a="intro">INTRO</button>
             <button data-a="hit">HIT</button>
             <button data-a="crit">CRIT</button>
             <button data-a="attack">WIND-UP + ATTACK</button>
@@ -73,6 +74,7 @@ BossRenderer.types.forEach(type => {
     card.querySelector('.controls').addEventListener('click', e => {
         const a = e.target.dataset?.a;
         if (!a) return;
+        if (a === 'intro') boss.intro();
         if (a === 'hit') boss.hit(800);
         if (a === 'crit') boss.hit(6000, { crit: true });
         if (a === 'attack') { clearTimeout(windTimer); boss.windUp(2500); windTimer = setTimeout(() => boss.release(), 2500); }
