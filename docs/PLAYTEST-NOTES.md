@@ -24,3 +24,11 @@ What was really going on:
 - **Full screen (#4):** there's a full-screen button on every student screen and in the projector controls.
 - **Heal clicks (#5):** picking a teammate now registers on press, so it takes one tap even if the list refreshes mid-tap.
 - **Vault blank (#6):** fixed. The same Firebase "drops empty values" behavior would also have crashed student screens in the final boss's Last Stand and in "every class" role calls. Those are fixed too. The test database now drops empty values the way Firebase does, so this kind of bug is caught before release.
+
+## Playtest 2: full class, Regular difficulty
+
+**Result:** the class **beat Regular**, with lots of talking and communicating.
+
+| # | Where | What happened | Fix |
+|---|---|---|---|
+| 7 | Landing page | The class icons were still flashing and "tweaking out" after the first fix | The real cause was website-only effects that are known to flicker on Chromebook graphics chips: a blurred see-through nav bar (`backdrop-filter`), a fixed background, and nonstop animations under them (spinning rings, flowing dashes, floating crests). Removed all three. The hero graphic is now static. Devices set to "reduce motion" get calm screens everywhere. |

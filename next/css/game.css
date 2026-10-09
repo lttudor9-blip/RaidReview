@@ -819,3 +819,8 @@ body[data-screen="game"] .fs-pill, body[data-screen="end"] .fs-pill { display: n
 .press-btn:active { transform: translateY(4px) scale(0.98); box-shadow: 0 0 20px var(--cls), inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
 .press-btn small { display: block; font-size: 0.85rem; letter-spacing: 0.06em; opacity: 0.8; }
 .press-btn.cool { filter: grayscale(0.6) brightness(0.7); }
+
+/* Devices set to "reduce motion" get a calm screen everywhere */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-iteration-count: 1 !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
