@@ -107,13 +107,13 @@ of truth, harder to cheat, all game logic in one place.
 
 | Scenario | Difficulty | Win rate |
 | --- | --- | --- |
-| Good teamwork | Regular | ~95% |
-| So-so teamwork | Regular | ~70% |
-| Poor teamwork | Regular | ~5% |
+| Good teamwork | Regular | ~85% |
+| So-so teamwork | Regular | ~60% |
+| Poor teamwork | Regular | ~12% |
 | All Warriors | Regular | 0% |
 | 6 students | Regular | ~65% |
-| Struggling class | Elementary | ~55% |
-| Strong class | Heroic | ~48% |
+| Struggling class | Elementary | ~45% |
+| Strong class | Heroic | ~55% |
 
 **Anti-sponge pass (after playtest 2).** The teachers said the bosses felt like health sponges. At a real classroom pace, fights were running about twice as long as intended. Changes:
 - Boss HP is cut about in half (5000 / 9000 / 10500 / 22000 per player), and the timers are shorter to match.
@@ -122,13 +122,29 @@ of truth, harder to cheat, all game logic in one place.
 - Winning the Last Stand takes 15% of the final boss's HP.
 - Boss damage is tuned so the shorter fights still need teamwork.
 
+**Boss mechanics v3 (fast mechanics).** Mechanics that make fights shorter when the squad talks, instead of longer:
+
+| Mechanic | Bosses | How it works |
+| --- | --- | --- |
+| Weak Spot | All | One class at a time deals ×2.5 damage. It moves to another class every 20 seconds. Supports should switch to attacking while it's theirs. |
+| Sniper Mark | Enforcer, Omega | A near-lethal shot on a few students. A Guardian shield on the target blocks it and ricochets 4–5% of the boss's HP back into it. |
+| Repair Drones | Construct | A Warrior role call. Shoot the drones down for a big chunk of damage, or the boss heals 8%. |
+| Silence | Construct | One class can only basic-attack for 8 seconds. A shield blocks it, and a Medic heal cleanses it. |
+| Elemental Shield | Omega (85% and 42%) | Only one class can damage the shield; everyone else does 20%. Break it within 25 seconds and the boss is staggered. Miss it and the shield bursts on the squad. |
+
+To make room for the faster damage, boss HP went back up a little (5000 / 10500 / 12500 / 23500 per player).
+
+Chaos mode also gets three new tools: **Silence**, **Element Shield** and **Weak Spot**.
+
+The rules are in `next/js/rules/engine.js` (`tickWeak`, `raiseElementShield`, `hitElementShield`, and the `mark` / `silence` / `drones` attack kinds). The tests are in `tests/bosses.test.mjs`.
+
 Typical fight lengths, Regular difficulty, good teamwork:
 
 | Boss | Fight length |
 | --- | --- |
-| Raider | ~75s |
-| Enforcer | ~90s |
-| Construct | ~2 min |
+| Raider | ~50s |
+| Enforcer | ~80s |
+| Construct | ~90s |
 | Omega | ~3 min |
 
 Running out of time matters. The boss enrages when the timer ends, then gets stronger every 20 seconds.

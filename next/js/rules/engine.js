@@ -8,7 +8,7 @@
 
 import { CLASSES, SYNERGY_WINDOW, SYNERGY_MULT, MONO_CLASS_PENALTY, STREAK_BONUS, ULT_PER_CORRECT, ULT_PER_SUPPORT, SPIRIT_RALLY_PER_CORRECT } from '../content/classes.js';
 import { PERKS } from '../content/perks.js';
-import { BOSSES, PHASES, TIMER_ENRAGE, ROLE_CALL_REFLECT, INFECTION_SPREAD_MS, MIN_SCALING_PLAYERS, WIPE_REGROUP_MS, WIPE_BOSS_HEAL, RAID_LIVES, PLAYER_LIVES, DIFFICULTY } from '../content/raid.js';
+import { BOSSES, PHASES, TIMER_ENRAGE, ROLE_CALL_REFLECT, ESHIELD_LEAK, ESHIELD_BREAK, INFECTION_SPREAD_MS, MIN_SCALING_PLAYERS, WIPE_REGROUP_MS, WIPE_BOSS_HEAL, RAID_LIVES, PLAYER_LIVES, DIFFICULTY } from '../content/raid.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -50,7 +50,7 @@ export function addPlayer(state, pid, { name, cls }) {
         id: pid, name, cls,
         hp: maxHp, maxHp, lives: PLAYER_LIVES, status: 'alive',
         ult: 0, cd: 0, streak: 0, armed: false,
-        shield: false, infected: 0, revive: 0,
+        shield: false, infected: 0, silenced: 0, revive: 0,
         stats: { dmg: 0, heal: 0, shields: 0, saves: 0, correct: 0, wrong: 0, downs: 0, revives: 0, bestStreak: 0, ults: 0, roleCalls: 0 }
     };
     return state.players[pid];
@@ -136,6 +136,7 @@ export function canAct(state, pid, ability, now) {
     if (!p.armed) return 'answer a question first';
     if (state.status !== 'boss' || !state.boss || state.boss.defeatedAt) return 'no fight';
     if (state.regroupUntil > now) return 'regrouping';
+    if (ability !== 'basic' && p.silenced > now) return 'silenced';
     if (ability === 'special' && p.cd > 0 && !callIsFor(state, p)) return 'special on cooldown';
     if (ability === 'ult' && p.ult < 100) return 'ultimate not charged';
     if (!CLASSES[p.cls].abilities[ability]) return 'unknown ability';
@@ -171,11 +172,17 @@ export function act(state, pid, { ability, target } = {}, now) {
                 base *= 1.5; crit = true;
             }
             if (p.cls === 'WARRIOR' && hasPerk(state, 'w_bloodlust')) base *= 1.2;
-            const mult = (1 + streakBonus(p)) * synergyMult(state, now) * (exposed ? 1 + b.exposeBonus : 1) * (b.mods?.dmg || 1);
-            const amount = Math.round(base * mult);
-            b.hp = Math.max(0, b.hp - amount);
+            const weak = isWeak(state, p, now);
+            const mult = (1 + streakBonus(p)) * synergyMult(state, now) * (exposed ? 1 + b.exposeBonus : 1) * (b.mods?.dmg || 1) * (weak ? weakMult(b) : 1);
+            let amount = Math.round(base * mult), resisted = false;
+            if (b.eshield) {
+                // only the shield's class can crack it; everyone else barely scratches the boss
+                const r = hitElementShield(state, p, amount, now, ev);
+                b.hp = Math.max(0, b.hp - r.toBoss);
+                resisted = r.resisted; amount = r.shown;
+            } else b.hp = Math.max(0, b.hp - amount);
             p.stats.dmg += amount;
-            ev.push({ type: 'hit', pid, ability, amount, crit, combo });
+            ev.push({ type: 'hit', pid, ability, amount, crit, combo, weak, resisted });
             if (combo) {
                 ev.push({ type: 'combo', name: combo, pid });
                 const setter = state.players[b.exposedBy];
@@ -200,7 +207,7 @@ export function act(state, pid, { ability, target } = {}, now) {
                 const amount = Math.min(ally.maxHp - ally.hp, Math.round(ally.maxHp * healFrac));
                 ally.hp += amount;
                 p.stats.heal += amount;
-                if (ally.infected) { ally.infected = 0; ev.push({ type: 'cured', pid, target: ally.id }); }
+                if (ally.infected || ally.silenced > now) { ally.infected = 0; ally.silenced = 0; ev.push({ type: 'cured', pid, target: ally.id }); }
                 ev.push({ type: 'heal', pid, target: ally.id, amount });
             } else {
                 return [{ type: 'rejected', pid, reason: 'target is out' }];
@@ -235,7 +242,7 @@ export function act(state, pid, { ability, target } = {}, now) {
                 if (a.status === 'down') revive(state, a, hasPerk(state, 'm_secondwind') ? 0.7 : ab.reviveAmount, pid, ev);
                 else if (a.status === 'alive') {
                     const amount = Math.min(a.maxHp - a.hp, Math.round(a.maxHp * ab.amount));
-                    a.hp += amount; a.infected = 0;
+                    a.hp += amount; a.infected = 0; a.silenced = 0;
                     p.stats.heal += amount;
                 }
             }
@@ -285,7 +292,7 @@ function knockDown(state, p, ev) {
     p.hp = 0;
     p.lives--;
     p.status = p.lives > 0 ? 'down' : 'out';
-    p.revive = 0; p.shield = false; p.infected = 0; p.armed = false; p.streak = 0;
+    p.revive = 0; p.shield = false; p.infected = 0; p.silenced = 0; p.armed = false; p.streak = 0;
     p.stats.downs++;
     if (state.boss) state.boss.downs = (state.boss.downs || 0) + 1;
     ev.push({ type: p.status === 'out' ? 'eliminated' : 'down', pid: p.id });
@@ -376,12 +383,12 @@ export function startBoss(state, bossId, now) {
         phase: 'NORMAL', enraged: false,
         startedAt: now, endsAt: now + B.timeLimit * (d.time || 1),
         exposedUntil: 0, exposeBonus: 0, stunUntil: 0,
-        attack: null, cds: {}, defeatedAt: 0, mods
+        attack: null, cds: {}, defeatedAt: 0, mods, weak: null, eshield: null
     };
     B.attacks.forEach((a, i) => { state.boss.cds[a.id] = now + a.cooldown * 0.5 + i * 4000; });
     state.boss.telegraph = null;
     state.team.dome = 0;
-    for (const p of playersOf(state)) { p.infected = 0; p.armed = false; }
+    for (const p of playersOf(state)) { p.infected = 0; p.silenced = 0; p.armed = false; }
     state.status = 'boss';
     return [{ type: 'bossStart', boss: bossId, maxHp, mods }];
 }
@@ -430,12 +437,24 @@ function attackMult(state, now) {
     };
 }
 
+// attacks that don't pick a few students ahead of time (the threat radar skips them)
+const UNTARGETED = new Set(['aoe', 'drones', 'silence']);
+
 function pickTargets(state, a, rng) {
     const alive = alivePlayers(state);
     if (a.kind === 'aoe') return alive.map(p => p.id);
+    if (a.kind === 'drones') return [];
+    if (a.kind === 'silence') {
+        // a whole class goes quiet; the rest of the squad has to cover for it
+        const classes = [...new Set(alive.map(p => p.cls))];
+        if (!classes.length) return [];
+        const cls = classes[Math.floor(rng() * classes.length)];
+        return alive.filter(p => p.cls === cls).map(p => p.id);
+    }
     // fewer targets in small rooms (a 6-person squad can't lose half its people to one hit)
     const base = Math.max(1, Math.round((a.targets || 1) * Math.min(1, alive.length / 10)));
-    const count = Math.min(alive.length, base + Math.floor(alive.length / 8));
+    // a sniper only has so many bullets: marks grow slower with the room
+    const count = Math.min(alive.length, base + Math.floor(alive.length / (a.kind === 'mark' ? 12 : 8)));
     if (a.kind === 'lowest') {
         return [...alive].sort((x, y) => x.hp / x.maxHp - y.hp / y.maxHp).slice(0, count).map(p => p.id);
     }
@@ -454,7 +473,7 @@ function startAttack(state, a, now, rng) {
     const planned = tg && tg.id === a.id ? tg.targets.filter(id => state.players[id]?.status === 'alive') : [];
     const targets = planned.length ? planned : pickTargets(state, a, rng);
     state.boss.telegraph = null;
-    if (!targets.length) return null;
+    if (!targets.length && a.kind !== 'drones') return null;
     const windup = Math.round(a.windup * difficultyOf(state).windup);
     state.boss.attack = {
         id: a.id, name: a.name, kind: a.kind, targets,
@@ -482,6 +501,13 @@ function resolveAttack(state, now, ev) {
         return;
     }
     if (atk.call) ev.push({ type: 'roleCallFailed', attack: atk.id, call: atk.call });
+    if (atk.kind === 'drones') {
+        // nobody shot the drones down: they patch the boss back up
+        const amount = Math.min(b.maxHp - b.hp, Math.round(b.maxHp * def.heal));
+        b.hp += amount;
+        ev.push({ type: 'bossRepair', attack: atk.id, amount });
+        return;
+    }
     if (state.team.dome > now) {
         ev.push({ type: 'domeBlock', attack: atk.id });
         if ((atk.kind === 'aoe' || atk.targets.length >= 3) && state.players[state.team.domeBy]) ev.push({ type: 'hero', kind: 'domeSave', pids: [state.team.domeBy], attack: atk.name });
@@ -489,15 +515,109 @@ function resolveAttack(state, now, ev) {
     }
 
     ev.push({ type: 'attack', attack: atk.id, name: atk.name, targets: atk.targets });
+    if (atk.kind === 'silence') {
+        for (const pid of atk.targets) {
+            const p = state.players[pid];
+            if (!p || p.status !== 'alive') continue;
+            if (p.shield) {
+                const by = p.shieldBy && p.shieldBy !== p.id && state.players[p.shieldBy] ? p.shieldBy : null;
+                if (by) state.players[by].stats.saves++;
+                useShield(p);
+                ev.push({ type: 'shieldBlock', pid: p.id, source: atk.id, by, amount: 0 });
+            } else {
+                p.silenced = now + def.ms;
+                ev.push({ type: 'silenced', pid: p.id, until: p.silenced });
+            }
+        }
+        return;
+    }
     for (const pid of atk.targets) {
         const p = state.players[pid];
         if (!p) continue;
+        const caster = p.shield && p.shieldBy && state.players[p.shieldBy];
         const blocked = damagePlayer(state, p, Math.round(p.maxHp * def.dmg * m.dmg), ev, atk.id) === 'blocked';
         if (atk.kind === 'infect' && p.status === 'alive' && !blocked && !p.infected) {
             p.infected = now + virusOf(b).spreadMs;
             ev.push({ type: 'infected', pid });
         }
+        if (atk.kind === 'mark' && blocked && !b.defeatedAt) {
+            // the shot bounces off the shield and back into the boss
+            const amount = Math.round(b.maxHp * (def.ricochet || 0.04));
+            b.hp = Math.max(0, b.hp - amount);
+            if (caster) caster.stats.dmg += amount;
+            ev.push({ type: 'ricochet', pid: p.id, by: caster ? caster.id : null, amount });
+        }
     }
+    if (atk.kind === 'mark') { checkPhase(state, ev); checkDefeat(state, now, ev); }
+}
+
+// ---------------------------------------------------------------- weak spot + elemental shield
+
+// One class at a time deals extra damage to the boss's weak spot, and the weak
+// spot moves every so often. The squad has to notice and let that class go all in.
+export function isWeak(state, p, now) {
+    const w = state.boss?.weak;
+    return !!w && w.cls === p.cls && w.until > now;
+}
+const weakMult = b => b.weak?.mult || 3;
+
+function tickWeak(state, now, rng, ev) {
+    const b = state.boss, W = BOSSES[b.id].weakness;
+    if (!W || b.eshield || (b.weak && now < b.weak.until)) return;
+    const alive = [...new Set(alivePlayers(state).map(p => p.cls))];
+    // a one-class raid has nobody to hand the weak spot to
+    if (new Set(playersOf(state).map(p => p.cls)).size < 2 || !alive.length) { b.weak = null; return; }
+    const pool = alive.length > 1 ? alive.filter(c => c !== b.weak?.cls) : alive;
+    setWeak(b, pool[Math.floor(rng() * pool.length)], now + W.everyMs, W.mult, ev);
+}
+
+function setWeak(b, cls, until, mult, ev) {
+    b.weak = { cls, until, mult };
+    ev.push({ type: 'weakShift', cls, until, mult });
+}
+
+function raiseElementShield(state, now, { hp = 0.03, ms = 25000, dmg = 0.3, text = '' } = {}, rng, ev) {
+    const b = state.boss;
+    const alive = [...new Set(alivePlayers(state).map(p => p.cls))];
+    if (!alive.length) return;
+    const cls = b.weak && alive.includes(b.weak.cls) ? b.weak.cls : alive[Math.floor(rng() * alive.length)];
+    const maxHp = Math.round(b.maxHp * hp);
+    b.eshield = { cls, hp: maxHp, maxHp, endsAt: now + ms, dmg };
+    setWeak(b, cls, b.eshield.endsAt, weakMult(b), ev);
+    ev.push({ type: 'eshield', cls, endsAt: b.eshield.endsAt, text });
+}
+
+// Returns how much of a hit reaches the boss (toBoss) and what to show (shown)
+function hitElementShield(state, p, amount, now, ev) {
+    const b = state.boss, sh = b.eshield;
+    if (p.cls !== sh.cls) {
+        const leak = Math.round(amount * ESHIELD_LEAK);
+        return { toBoss: leak, shown: leak, resisted: true };
+    }
+    const absorbed = Math.min(sh.hp, amount);
+    sh.hp -= absorbed;
+    if (sh.hp <= 0) {
+        b.eshield = null;
+        b.weak.until = now; // the weak spot moves on next tick
+        b.attack = null; b.telegraph = null;
+        b.stunUntil = now + ESHIELD_BREAK.stun;
+        b.exposedUntil = now + ESHIELD_BREAK.expose;
+        b.exposeBonus = CLASSES.TACTICIAN.abilities.special.bonus;
+        b.exposedBy = null;
+        ev.push({ type: 'eshieldBreak', pid: p.id, cls: p.cls, until: b.stunUntil });
+    }
+    return { toBoss: amount - absorbed, shown: amount, resisted: false };
+}
+
+function tickElementShield(state, now, ev) {
+    const b = state.boss, sh = b.eshield;
+    if (!sh || now < sh.endsAt) return;
+    b.eshield = null;
+    if (b.weak) b.weak.until = now;
+    ev.push({ type: 'eshieldBurst', cls: sh.cls });
+    if (state.team.dome > now) { ev.push({ type: 'domeBlock', attack: 'eshield' }); return; }
+    const m = attackMult(state, now);
+    for (const p of alivePlayers(state)) damagePlayer(state, p, Math.round(p.maxHp * sh.dmg * m.dmg), ev, 'eshield');
 }
 
 const DEFAULT_VIRUS = { spreadMs: INFECTION_SPREAD_MS, dmg: 0.08, overloadShare: 0.5, overloadDmg: 0.2, overloadCd: 25000 };
@@ -538,7 +658,7 @@ function tickInfection(state, now, rng, ev) {
 
 // ---------------------------------------------------------------- scripted beats
 
-function tickBeats(state, now, ev) {
+function tickBeats(state, now, rng, ev) {
     const b = state.boss;
     const beats = BOSSES[b.id].beats || [];
     b.beatsDone ||= {};
@@ -557,6 +677,8 @@ function tickBeats(state, now, ev) {
             b.cds[beat.attack] = now;
             b.attack = null; b.telegraph = null; b.stunUntil = 0;
             ev.push({ type: 'bossBeat', text: beat.text });
+        } else if (beat.kind === 'eshield') {
+            raiseElementShield(state, now, beat, rng, ev);
         } else if (beat.kind === 'lastStand') {
             const classes = [...new Set(alivePlayers(state).map(p => p.cls))];
             for (const p of alivePlayers(state)) p.ult = 100; // the boss's overload surges every ultimate to full
@@ -626,7 +748,9 @@ export function tick(state, now, rng = Math.random) {
     }
 
     tickInfection(state, now, rng, ev);
-    tickBeats(state, now, ev);
+    tickBeats(state, now, rng, ev);
+    tickElementShield(state, now, ev);
+    tickWeak(state, now, rng, ev);
 
     if (b.lastStand) {
         // the boss is charging: no other attacks until the countdown resolves
@@ -637,7 +761,7 @@ export function tick(state, now, rng = Math.random) {
         const attacks = BOSSES[b.id].attacks;
         // plan the next single-target attack ahead of time (threat radar)
         if (!b.telegraph) {
-            const next = attacks.filter(a => a.kind !== 'aoe').sort((x, y) => (b.cds[x.id] || 0) - (b.cds[y.id] || 0))[0];
+            const next = attacks.filter(a => !UNTARGETED.has(a.kind)).sort((x, y) => (b.cds[x.id] || 0) - (b.cds[y.id] || 0))[0];
             if (next && (b.cds[next.id] || 0) - now <= TELEGRAPH_MS) {
                 const targets = pickTargets(state, next, rng);
                 if (targets.length) b.telegraph = { id: next.id, name: next.name, targets, at: Math.max(now, b.cds[next.id] || 0) };
@@ -678,7 +802,7 @@ export function restoreBetweenStages(state) {
     for (const p of playersOf(state)) {
         if (p.status !== 'alive') { p.status = 'alive'; p.hp = 0; p.lives = Math.max(1, p.lives); }
         p.hp = Math.min(p.maxHp, Math.max(p.hp, 0) + Math.round(p.maxHp * 0.4));
-        p.revive = 0; p.infected = 0; p.armed = false;
+        p.revive = 0; p.infected = 0; p.silenced = 0; p.armed = false;
         p.ult = Math.min(100, p.ult + 15);
     }
     state.team.syn = {};
@@ -696,11 +820,13 @@ export function shiftTime(state, dt) {
         if (b.attack) { b.attack.startedAt += dt; b.attack.landsAt += dt; }
     }
     if (b?.lastStand) b.lastStand.endsAt += dt;
+    if (b?.weak) b.weak.until += dt;
+    if (b?.eshield) b.eshield.endsAt += dt;
     if (b?.overloadAt) b.overloadAt += dt;
     if (state.team.dome) state.team.dome += dt;
     if (state.regroupUntil) state.regroupUntil += dt;
     for (const k of Object.keys(state.team.syn)) state.team.syn[k] += dt;
-    for (const p of playersOf(state)) if (p.infected) p.infected += dt;
+    for (const p of playersOf(state)) { if (p.infected) p.infected += dt; if (p.silenced) p.silenced += dt; }
 }
 
 // ---------------------------------------------------------------- chaos mode (teacher)
@@ -713,7 +839,10 @@ export const CHAOS = {
     patient: { cd: 40000, label: 'PATIENT ZERO', desc: 'Infect a random student' },
     reward: { cd: 12000, label: 'REWARD', desc: '+35% ultimate for one class' },
     strike: { cd: 60000, label: 'AIR STRIKE', desc: '6% damage to the boss' },
-    rally: { cd: 60000, label: 'SUPPLY DROP', desc: '+25% ultimate for everyone' }
+    rally: { cd: 60000, label: 'SUPPLY DROP', desc: '+25% ultimate for everyone' },
+    silence: { cd: 40000, label: 'SILENCE', desc: 'One class can only basic-attack for 8 seconds' },
+    eshield: { cd: 60000, label: 'ELEMENT SHIELD', desc: 'Only one class can hurt the boss until they break the shield' },
+    weak: { cd: 30000, label: 'WEAK SPOT', desc: 'A new class deals triple damage for 15 seconds' }
 };
 
 export function chaosReady(state, kind, now) {
@@ -749,6 +878,19 @@ export function chaos(state, kind, now, { cls } = {}, rng = Math.random) {
         checkPhase(state, ev);
     } else if (kind === 'rally') {
         for (const p of alive) p.ult = Math.min(100, p.ult + 25);
+    } else if (kind === 'silence') {
+        const classes = [...new Set(alive.map(p => p.cls))];
+        if (!classes.length) return ev;
+        const c = classes[Math.floor(rng() * classes.length)];
+        for (const p of alive.filter(p => p.cls === c)) { p.silenced = now + 8000; ev.push({ type: 'silenced', pid: p.id, until: p.silenced }); }
+    } else if (kind === 'eshield') {
+        if (b.eshield) return ev;
+        raiseElementShield(state, now, {}, rng, ev);
+    } else if (kind === 'weak') {
+        if (b.eshield) return ev;
+        const classes = [...new Set(alive.map(p => p.cls))];
+        const pool = classes.length > 1 ? classes.filter(c => c !== b.weak?.cls) : classes;
+        if (pool.length) setWeak(b, pool[Math.floor(rng() * pool.length)], now + 15000, 3, ev);
     }
     return ev;
 }

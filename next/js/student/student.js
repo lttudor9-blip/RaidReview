@@ -4,7 +4,7 @@
 // intents; the host applies the real rules and publishes everyone's state.
 
 import { CLASSES, CLASS_IDS, SYNERGY_MULT, STREAK_BONUS } from '../content/classes.js';
-import { BOSSES, DIFFICULTY } from '../content/raid.js';
+import { BOSSES, DIFFICULTY, ESHIELD_LEAK } from '../content/raid.js';
 import { questionDeck, shuffled } from '../content/questions.js';
 import { playerIdFor, joinRoom, chooseClass, sendIntent, listenRoom, lookupRoom } from '../net/room.js';
 import { AudioEngine as Audio } from '../audio.js';
@@ -528,6 +528,17 @@ function banners(now) {
             ? `<div class="banner big" style="--bc:#2ed573">✔ ${clsName}S FIRED! Hold on: ${ls.need.filter(c => !ls.who[c]).map(c => CLASSES[c].name.toUpperCase() + 'S').join(', ') || 'everyone'} still needed <span class="bt">${secs(ls.endsAt)}s</span></div>`
             : `<div class="banner big danger">LAST STAND! ${clsName}S: ANSWER, THEN FIRE YOUR ULTIMATE! <span class="bt">${secs(ls.endsAt)}s</span></div>`);
     }
+    const sh = inFight() ? b?.eshield : null, w = inFight() && b?.weak && b.weak.until > now ? b.weak : null;
+    const live = pub.status === 'alive';
+    if (sh && live) {
+        const sc = CLASSES[sh.cls], shp = Math.round(pct(sh.hp, sh.maxHp));
+        out.push(sh.cls === pub.cls
+            ? `<div class="banner big" style="--bc:${sc.color}">🛡 ELEMENTAL SHIELD: ONLY ${clsName}S CAN BREAK IT! ATTACK! (${shp}% left) <span class="bt">${secs(sh.endsAt)}s</span></div>`
+            : `<div class="banner" style="--bc:${sc.color}">🛡 ELEMENTAL SHIELD: your hits barely scratch it. Let the ${sc.name.toUpperCase()}S break it, keep them alive! <span class="bt">${secs(sh.endsAt)}s</span></div>`);
+    } else if (w && live && w.cls === pub.cls) {
+        out.push(`<div class="banner big" style="--bc:${CLASSES[pub.cls].color}">🎯 WEAK SPOT: ${clsName}S DEAL ×${w.mult} DAMAGE! Attack now <span class="bt">${secs(w.until)}s</span></div>`);
+    }
+    if (live && pub.silenced > now && inFight()) out.push(`<div class="banner big" style="--bc:#9fa8ff">🔇 SILENCED: basic attacks only. A Medic heal cleanses it <span class="bt">${secs(pub.silenced)}s</span></div>`);
     if (b && b.stunUntil > now && !ls && inFight() && !atk) out.push(`<div class="banner big" style="--bc:#ffb020">BOSS STAGGERED: EVERY CLASS HIT IT NOW! <span class="bt">${secs(b.stunUntil)}s</span></div>`);
     if (atk && inFight()) {
         if (call && !call.done && call.cls === pub.cls) out.push(`<div class="banner big" style="--bc:${CLASSES[pub.cls].color}">BOSS CALLS ${clsName}S! Answer, then hit ${esc(CLASSES[pub.cls].abilities.special.name.toUpperCase())} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
@@ -535,11 +546,15 @@ function banners(now) {
         else if (call && !call.done && call.cls === 'ANY') out.push(`<div class="banner big" style="--bc:#ffa502">EVERYONE: ACT NOW TO STOP ${esc(atk.name)} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
         else if (call && call.done) out.push(`<div class="banner" style="--bc:#2ed573">✔ ROLE CALL ANSWERED: ${esc(atk.name)} WILL BE BLOCKED</div>`);
         if ((atk.targets || []).includes(S.pid) && pub.status === 'alive' && !(call && call.done)) {
-            out.push(`<div class="banner big danger">⚠ YOU'RE TARGETED: ${esc(atk.name)}${pub.shield ? ' (your shield will block it)' : ' — Guardians can shield you!'} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
+            const why = atk.kind === 'mark' ? (pub.shield ? ' (your shield will bounce it back!)' : ' — it can knock you out! GUARDIANS: SHIELD ME!')
+                : atk.kind === 'silence' ? (pub.shield ? ' (your shield will block it)' : ' — you\'ll be stuck on basic attacks. Guardians can shield you!')
+                : pub.shield ? ' (your shield will block it)' : ' — Guardians can shield you!';
+            out.push(`<div class="banner big danger">⚠ YOU'RE TARGETED: ${esc(atk.name)}${why} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
         } else if (!call) out.push(`<div class="banner danger">⚠ ${esc(atk.name)} INCOMING <span class="bt">${secs(atk.landsAt)}s</span></div>`);
     }
     if (pub.infected && pub.status === 'alive') out.push(`<div class="banner big" style="--bc:#7bed9f">☣ INFECTED: your ultimate is jammed and it spreads in <span class="bt">${secs(pub.infected)}s</span> — MEDIC! Guardians: shield the healthy to quarantine.</div>`);
     if (S.live.team?.dome > now) out.push(`<div class="banner" style="--bc:${CLASSES.GUARDIAN.color}">◆ IRON DOME: the squad is invulnerable <span class="bt">${secs(S.live.team.dome)}s</span></div>`);
+    if (w && !sh && w.cls !== pub.cls) out.push(`<div class="banner" style="--bc:${CLASSES[w.cls].color}">🎯 WEAK SPOT: ${CLASSES[w.cls].name.toUpperCase()}S deal ×${w.mult} damage <span class="bt">${secs(w.until)}s</span></div>`);
     if (b && b.exposedUntil > now && pub.cls !== 'WARRIOR') out.push(`<div class="banner" style="--bc:${CLASSES.TACTICIAN.color}">BOSS EXPOSED: everyone deals +25% <span class="bt">${secs(b.exposedUntil)}s</span></div>`);
     return out.slice(0, 3).join('');
 }
@@ -560,7 +575,7 @@ function renderSquad(now) {
             <div style="min-width:0">
                 <div class="nm"><span>${esc(p.name)}${p.id === S.pid ? ' (you)' : ''}</span>${co ? `<span class="callout-badge ${co}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[co]}</span>` : ''}</div>
                 <div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div>
-                <div class="tags">${p.status === 'down' ? '<b style="color:#ff4757">DOWN</b>' : p.status === 'out' ? '<span>👻 SPIRIT</span>' : ''}${targeted.has(p.id) && p.status === 'alive' ? '<b style="color:#ff4757">TARGETED</b>' : soon.has(p.id) && p.status === 'alive' ? '<b style="color:#ffa502">INCOMING</b>' : ''}${p.shield ? '<span style="color:#7d95ff">◆ SHIELD</span>' : ''}${p.infected ? '<b style="color:#7bed9f">☣</b>' : ''}${p.ult >= 100 ? '<span class="gold">★ ULT</span>' : ''}</div>
+                <div class="tags">${p.status === 'down' ? '<b style="color:#ff4757">DOWN</b>' : p.status === 'out' ? '<span>👻 SPIRIT</span>' : ''}${targeted.has(p.id) && p.status === 'alive' ? '<b style="color:#ff4757">TARGETED</b>' : soon.has(p.id) && p.status === 'alive' ? '<b style="color:#ffa502">INCOMING</b>' : ''}${p.shield ? '<span style="color:#7d95ff">◆ SHIELD</span>' : ''}${p.infected ? '<b style="color:#7bed9f">☣</b>' : ''}${p.silenced > now && p.status === 'alive' ? '<b style="color:#9fa8ff">🔇</b>' : ''}${p.ult >= 100 ? '<span class="gold">★ ULT</span>' : ''}</div>
             </div></button>`;
     }).join(''));
     const syn = S.live.team?.syn || {};
@@ -574,7 +589,7 @@ function renderSquad(now) {
 function situationKey() {
     const st = S.live.stage || {};
     if (st.kind === 'puzzle') return ['puzzle', st.id, S.live.paused, puzzleKey(S.live)].join('|');
-    return [st.kind, st.id, st.phase, S.live.paused, S.live.regroupUntil > hostNow(), S.local, S.me.pub.status, S.q?.i ?? -1].join('|');
+    return [st.kind, st.id, st.phase, S.live.paused, S.live.regroupUntil > hostNow(), S.local, S.me.pub.status, S.q?.i ?? -1, (S.me.pub.silenced || 0) > hostNow()].join('|');
 }
 
 function drawControls(soft) {
@@ -710,8 +725,9 @@ function actionButtons(c, pub, live = true) {
     const call = live ? myCall() : null;
     const callAll = live && S.live.boss?.attack?.call;
     const a = c.abilities;
-    const spReady = pub.cd <= 0 || !!call;
-    const ultReady = pub.ult >= 100;
+    const silenced = live && (pub.silenced || 0) > hostNow();
+    const spReady = !silenced && (pub.cd <= 0 || !!call);
+    const ultReady = !silenced && pub.ult >= 100;
     const calledAll = callAll && callAll.cls === 'ALL' && !callAll.done && !(callAll.who || {})[c.id];
     const card = (key, extra, disabled, overlay) => {
         const ab = a[key];
@@ -732,11 +748,11 @@ function actionButtons(c, pub, live = true) {
         : `<button class="ult-btn" data-ab="ult" disabled>
             <span class="ult-fill" style="width:${pub.ult}%"></span>
             <span class="ult-ic">${abilityIcon(u.id, { size: 60 })}</span>
-            <span class="ult-body"><span class="ult-kicker">★ ULTIMATE CHARGING · ${pub.ult}%</span><span class="ult-name">${esc(u.name.toUpperCase())}</span><span class="ult-desc">Right answers charge it. ${esc(u.desc)}</span></span>
+            <span class="ult-body"><span class="ult-kicker">${silenced ? '🔇 SILENCED' : '★ ULTIMATE CHARGING'} · ${pub.ult}%</span><span class="ult-name">${esc(u.name.toUpperCase())}</span><span class="ult-desc">Right answers charge it. ${esc(u.desc)}</span></span>
           </button>`;
     return card('basic', '', false, '')
         + card('special', call || calledAll ? 'called' : '', !spReady,
-            !spReady ? `<span class="act-lock">🔒 ${pub.cd} MORE RIGHT ANSWER${pub.cd > 1 ? 'S' : ''}</span>` : call || calledAll ? '<span class="act-callout">THE BOSS CALLED YOU!</span>' : '')
+            silenced ? '<span class="act-lock">🔇 SILENCED</span>' : !spReady ? `<span class="act-lock">🔒 ${pub.cd} MORE RIGHT ANSWER${pub.cd > 1 ? 'S' : ''}</span>` : call || calledAll ? '<span class="act-callout">THE BOSS CALLED YOU!</span>' : '')
         + ult;
 }
 
@@ -783,8 +799,10 @@ function predictDamage(abKey) {
     else if (abKey === 'special' && exposed) { base *= 1.5; crit = true; }
     const syn = { ...(S.live.team?.syn || {}), [pub.cls]: now };
     const lvl = Math.max(1, Object.values(syn).filter(t => now - t <= 10000).length);
-    const amount = Math.round(base * (1 + streakBonusPct(S.streak || 0, pub.cls) / 100) * SYNERGY_MULT[lvl] * (exposed ? 1 + (b.exposeBonus || 0) : 1));
-    return { amount, crit, combo };
+    const weak = b?.weak && b.weak.cls === pub.cls && b.weak.until > now ? b.weak.mult : 1;
+    const resist = b?.eshield && b.eshield.cls !== pub.cls ? ESHIELD_LEAK : 1;
+    const amount = Math.round(base * (1 + streakBonusPct(S.streak || 0, pub.cls) / 100) * SYNERGY_MULT[lvl] * (exposed ? 1 + (b.exposeBonus || 0) : 1) * weak * resist);
+    return { amount, crit: crit || weak > 1, combo };
 }
 
 function doAct(ab, target, btn) {
@@ -892,9 +910,20 @@ function effect(ev) {
         case 'lastStandWon': slam('ANNIHILATION STOPPED!', { color: '#2ed573', sub: `${fmtNum(ev.amount)} DAMAGE · BOSS STUNNED` }); confetti(80); break;
         case 'lastStandFailed': slam('ANNIHILATION', { color: '#ff2a3d', sub: 'NOT EVERY CLASS FIRED IN TIME' }); flash('#ff2a3d', 0.6); shake($('#g')); break;
         case 'quarantine': if (ev.pid === me) { slam('QUARANTINED!', { color: '#7d95ff', sub: 'A SHIELD BLOCKED THE VIRUS' }); } else if (ev.by === me) { slam('QUARANTINE!', { color: '#7d95ff', sub: 'YOUR SHIELD STOPPED THE VIRUS' }); unlock('save'); } break;
+        case 'weakShift': if (ev.cls === pub.cls && pub.status === 'alive') { slam('WEAK SPOT: YOU!', { color: CLASSES[pub.cls].color, sub: `${CLASSES[pub.cls].name.toUpperCase()}S DEAL ×${ev.mult} DAMAGE · ATTACK NOW` }); edge(CLASSES[pub.cls].color); Audio.sfxBuff(); S.lastKey = null; } break;
+        case 'eshield': slam('ELEMENTAL SHIELD!', { color: CLASSES[ev.cls].color, sub: ev.cls === pub.cls ? `ONLY ${CLASSES[pub.cls].name.toUpperCase()}S CAN BREAK IT · THAT'S YOU!` : `ONLY ${CLASSES[ev.cls].name.toUpperCase()}S CAN BREAK IT · COVER THEM` }); edge(CLASSES[ev.cls].color); break;
+        case 'eshieldBreak': slam('SHIELD SHATTERED!', { color: '#ffb020', sub: ev.pid === me ? 'YOU BROKE IT! EVERY CLASS: HIT IT NOW' : 'BOSS STAGGERED · EVERY CLASS: HIT IT NOW' }); edge('#ffb020'); if (ev.pid === me) confetti(60); break;
+        case 'eshieldBurst': slam('SHIELD BURST', { color: '#ff2a3d', sub: 'IT WASN\'T BROKEN IN TIME' }); flash('#ff2a3d', 0.5); shake($('#g')); break;
+        case 'ricochet':
+            if (ev.by === me) { slam('RICOCHET!', { color: CLASSES.GUARDIAN.color, sub: `YOUR SHIELD BOUNCED THE SHOT · ${fmtNum(ev.amount)} DAMAGE` }); unlock('save'); }
+            else if (ev.pid === me) slam('SHOT BLOCKED!', { color: CLASSES.GUARDIAN.color, sub: 'A SHIELD BOUNCED THE SNIPER MARK' });
+            else textPop(layer, `RICOCHET ${fmtNum(ev.amount)}`, CLASSES.GUARDIAN.color, 2);
+            break;
+        case 'bossRepair': textPop(layer, `BOSS REPAIRED +${fmtNum(ev.amount)}`, '#2ed573', 2.4); break;
+        case 'silenced': if (ev.pid === me) { slam('SILENCED!', { color: '#9fa8ff', sub: 'BASIC ATTACKS ONLY · ASK A MEDIC TO CLEANSE YOU' }); S.lastKey = null; } break;
         case 'overload': slam('SYSTEM OVERLOAD!', { color: '#7bed9f', sub: `${ev.infected} INFECTED · MEDICS, CURE THEM!` }); flash('#2ed573', 0.35); break;
         case 'chaos': {
-            const t = { meteor: ['METEOR STRIKE!', '#ff4757', 'YOUR TEACHER CALLED IT IN'], drain: ['SHIELD DRAIN!', '#4a6cff', 'EVERY SHIELD IS GONE'], patient: ['PATIENT ZERO!', '#7bed9f', 'SOMEONE JUST GOT INFECTED'], strike: ['AIR STRIKE!', '#ffb020', 'TEACHER SUPPORT INBOUND'], rally: ['SUPPLY DROP!', '#ffb020', '+25% ULTIMATE FOR EVERYONE'] }[ev.kind];
+            const t = { meteor: ['METEOR STRIKE!', '#ff4757', 'YOUR TEACHER CALLED IT IN'], drain: ['SHIELD DRAIN!', '#4a6cff', 'EVERY SHIELD IS GONE'], patient: ['PATIENT ZERO!', '#7bed9f', 'SOMEONE JUST GOT INFECTED'], silence: ['SILENCE!', '#9fa8ff', 'ONE CLASS JUST WENT QUIET'], strike: ['AIR STRIKE!', '#ffb020', 'TEACHER SUPPORT INBOUND'], rally: ['SUPPLY DROP!', '#ffb020', '+25% ULTIMATE FOR EVERYONE'] }[ev.kind];
             if (t) { slam(t[0], { color: t[1], sub: t[2] }); edge(t[1]); if (ev.kind === 'meteor' || ev.kind === 'drain') shake($('#g')); }
             break;
         }

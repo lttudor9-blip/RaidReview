@@ -174,7 +174,7 @@ function flush(H) {
     };
     for (const [k, v] of Object.entries(live)) setIfChanged(H, out, `live/${k}`, v);
     for (const p of Object.values(e.players)) {
-        const pub = { id: p.id, name: p.name, cls: p.cls, hp: p.hp, maxHp: p.maxHp, lives: p.lives, status: p.status, ult: p.ult, cd: p.cd, streak: p.streak, armed: p.armed, shield: p.shield, infected: p.infected, revive: p.revive, callout: H.callouts[p.id] || null };
+        const pub = { id: p.id, name: p.name, cls: p.cls, hp: p.hp, maxHp: p.maxHp, lives: p.lives, status: p.status, ult: p.ult, cd: p.cd, streak: p.streak, armed: p.armed, shield: p.shield, infected: p.infected, silenced: p.silenced || 0, revive: p.revive, callout: H.callouts[p.id] || null };
         setIfChanged(H, out, `players/${p.id}/pub`, pub);
         setIfChanged(H, out, `players/${p.id}/stats`, p.stats);
         if (H.qlog[p.id]) setIfChanged(H, out, `players/${p.id}/qlog`, H.qlog[p.id]);
@@ -194,7 +194,7 @@ function setIfChanged(H, out, path, value) {
 // ================================================================= events → visuals
 
 // Team-wide moments every Chromebook reacts to
-const TEAM_FX = new Set(['hero', 'infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'attack', 'bossDefeated', 'breach', 'expose', 'puzzleStrike', 'puzzleSolved', 'puzzleFailed', 'reactorStep', 'reactorRound', 'vaultLocking', 'enrageStack', 'stagger', 'bossBeat', 'lastStand', 'lastStandProgress', 'lastStandWon', 'lastStandFailed', 'overload', 'chaos', 'teacherReward', 'perkUnlocked']);
+const TEAM_FX = new Set(['hero', 'infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'attack', 'bossDefeated', 'breach', 'expose', 'puzzleStrike', 'puzzleSolved', 'puzzleFailed', 'reactorStep', 'reactorRound', 'vaultLocking', 'enrageStack', 'stagger', 'bossBeat', 'lastStand', 'lastStandProgress', 'lastStandWon', 'lastStandFailed', 'overload', 'chaos', 'teacherReward', 'perkUnlocked', 'weakShift', 'eshield', 'eshieldBreak', 'eshieldBurst', 'ricochet', 'bossRepair']);
 // Personal moments go to each involved student's own channel (players/{pid}/fx),
 // so a busy room never pushes someone's damage number out of the shared list
 const PERSONAL_KEYS = ['pid', 'target', 'by'];
@@ -226,7 +226,8 @@ function visual(H, ev) {
     switch (ev.type) {
         case 'hit': {
             boss && boss.hit(ev.amount, { crit: ev.crit || !!ev.combo || ev.ability === 'ult' });
-            floater(layer, (ev.crit ? 'CRIT ' : '') + fmtNum(ev.amount), { color: color(ev.pid), size: ev.ability === 'ult' ? '3.4rem' : ev.crit ? '2.6rem' : '1.9rem', x: 30 + Math.random() * 40, y: 30 + Math.random() * 30 });
+            if (ev.resisted) { floater(layer, 'RESISTED ' + fmtNum(ev.amount), { color: '#8a8fa3', size: '1.5rem', x: 30 + Math.random() * 40, y: 30 + Math.random() * 30 }); break; }
+            floater(layer, (ev.weak ? 'WEAK SPOT ' : ev.crit ? 'CRIT ' : '') + fmtNum(ev.amount), { color: color(ev.pid), size: ev.ability === 'ult' ? '3.4rem' : ev.crit ? '2.6rem' : '1.9rem', x: 30 + Math.random() * 40, y: 30 + Math.random() * 30 });
             Audio.sfxHit(ev.amount);
             if (ev.ability === 'ult') { flash(color(ev.pid), 0.35); shake(H.ui.arena); }
             break;
@@ -263,7 +264,7 @@ function visual(H, ev) {
         case 'attack': boss && boss.release(); flash('#ff2a3d', 0.25); shake(H.ui.arena); break;
         case 'roleCallSuccess':
             boss && boss.cancelWindUp(); boss && boss.hit(ev.reflect, { crit: true });
-            floater(layer, 'BLOCKED! ' + fmtNum(ev.reflect) + ' REFLECTED', { color: '#2ed573', size: '2.6rem', y: 35 });
+            floater(layer, (ev.attack === 'drones' ? 'DRONES DOWN! ' : 'BLOCKED! ') + fmtNum(ev.reflect) + (ev.attack === 'drones' ? ' DAMAGE' : ' REFLECTED'), { color: '#2ed573', size: '2.6rem', y: 35 });
             Audio.sfxPuzzleSolve(); logFeed(H, '<b style="color:#2ed573">Role call answered!</b> Attack stopped.');
             break;
         case 'roleCallFailed': logFeed(H, '<b style="color:#ff4757">Role call missed</b>'); break;
@@ -293,7 +294,7 @@ function visual(H, ev) {
         case 'quarantine': floater(layer, 'QUARANTINED!', { color: CLASSES.GUARDIAN.color, size: '2.6rem', y: 70 }); logFeed(H, `${ev.by ? nameOf(H, ev.by) + "'s shield" : 'A shield'} <b style="color:${CLASSES.GUARDIAN.color}">blocked the virus</b> from ${nameOf(H, ev.pid)}`); break;
         case 'overload': floater(layer, `SYSTEM OVERLOAD! ${ev.infected} INFECTED`, { color: '#7bed9f', size: '3rem', y: 50 }); flash('#2ed573', 0.35); shake(H.ui.arena); logFeed(H, `<b style="color:#7bed9f">SYSTEM OVERLOAD:</b> ${ev.infected} infected hit the whole squad. Medics, cure them!`); break;
         case 'chaos': {
-            const t = { meteor: ['☄ METEOR STRIKE!', '#ff4757'], drain: ['SHIELD DRAIN!', '#4a6cff'], patient: ['☣ PATIENT ZERO!', '#7bed9f'], strike: ['AIR STRIKE!', '#ffb020'], rally: ['SUPPLY DROP! +25% ULT', '#ffb020'] }[ev.kind];
+            const t = { meteor: ['☄ METEOR STRIKE!', '#ff4757'], drain: ['SHIELD DRAIN!', '#4a6cff'], patient: ['☣ PATIENT ZERO!', '#7bed9f'], strike: ['AIR STRIKE!', '#ffb020'], rally: ['SUPPLY DROP! +25% ULT', '#ffb020'], silence: ['🔇 SILENCE!', '#9fa8ff'] }[ev.kind];
             if (t) { floater(layer, t[0], { color: t[1], size: '3.2rem', y: 55 }); flash(t[1], 0.35); if (ev.kind === 'meteor' || ev.kind === 'drain') shake(H.ui.arena); }
             if (ev.kind !== 'reward') logFeed(H, `<b class="gold">Teacher:</b> ${CHAOS[ev.kind].label.toLowerCase()}`);
             Audio.stinger(ev.kind === 'strike' || ev.kind === 'rally' ? 'ult' : 'telegraph');
@@ -301,6 +302,36 @@ function visual(H, ev) {
         }
         case 'teacherReward': floater(layer, `TEACHER BONUS: ${CLASSES[ev.cls].name.toUpperCase()}S +35% ULT`, { color: CLASSES[ev.cls].color, size: '2.8rem', y: 65 }); logFeed(H, `<b class="gold">Teacher bonus</b> for the <b style="color:${CLASSES[ev.cls].color}">${CLASSES[ev.cls].name}s</b>: great teamwork!`); Audio.stinger('hero'); break;
         case 'perkUnlocked': logFeed(H, `<b style="color:${CLASSES[ev.cls].color}">${CLASSES[ev.cls].name}s</b> unlocked <b class="gold">${esc(ev.name)}</b>`); break;
+        case 'weakShift': {
+            const c = CLASSES[ev.cls];
+            floater(layer, `WEAK SPOT: ${c.name.toUpperCase()}S ×${ev.mult}!`, { color: c.color, size: '3rem', y: 78 });
+            logFeed(H, `<b style="color:${c.color}">Weak spot: ${c.name}s</b> deal ×${ev.mult} damage. Let them go all in!`);
+            Audio.sfxBuff();
+            break;
+        }
+        case 'eshield': {
+            const c = CLASSES[ev.cls];
+            floater(layer, `ELEMENTAL SHIELD: ONLY ${c.name.toUpperCase()}S CAN BREAK IT!`, { color: c.color, size: '2.8rem', y: 45 });
+            flash(c.color, 0.4); Audio.stinger('telegraph');
+            logFeed(H, `<b style="color:${c.color}">Elemental Shield!</b> Only ${c.name}s can break it. Everyone else: cover them`);
+            break;
+        }
+        case 'eshieldBreak': {
+            const c = CLASSES[ev.cls];
+            floater(layer, 'SHIELD SHATTERED! HIT IT NOW!', { color: '#ffb020', size: '3.6rem', y: 42 });
+            flash(c.color, 0.45); shake(H.ui.arena); Audio.stinger('combo');
+            logFeed(H, `<b style="color:${c.color}">${nameOf(H, ev.pid)}</b> shattered the shield! The boss is staggered`);
+            break;
+        }
+        case 'eshieldBurst': floater(layer, 'SHIELD BURST!', { color: '#ff2a3d', size: '3.6rem', y: 45 }); flash('#ff2a3d', 0.5); shake(H.ui.arena); Audio.stinger('wipe'); logFeed(H, '<b style="color:#ff4757">The shield held too long</b> and burst on the squad'); break;
+        case 'ricochet':
+            boss && boss.hit(ev.amount, { crit: true });
+            floater(layer, `RICOCHET! ${fmtNum(ev.amount)}`, { color: CLASSES.GUARDIAN.color, size: '3rem', y: 40 });
+            Audio.sfxShield();
+            logFeed(H, `${ev.by ? nameOf(H, ev.by) + "'s shield" : 'A shield'} bounced the <b>Sniper Mark</b> back into the boss!`);
+            break;
+        case 'bossRepair': floater(layer, `BOSS REPAIRED +${fmtNum(ev.amount)}`, { color: '#2ed573', size: '2.8rem', y: 40 }); logFeed(H, '<b style="color:#ff4757">The drones repaired the boss.</b> Warriors: shoot them down next time!'); break;
+        case 'silenced': logFeed(H, `${nameOf(H, ev.pid)} is <b style="color:#9fa8ff">silenced</b>: basic attacks only`); break;
         case 'hero': heroMoment(H, ev); break;
         case 'wipe': showWipe(H, ev); break;
         case 'regrouped': hideOverlay(H); Audio.muffle(false); break;
@@ -554,6 +585,7 @@ function renderFightScreen(H) {
                 <canvas id="boss-canvas"></canvas>
                 <div class="fx-layer" id="fx-layer"></div>
                 <div class="rolecall" id="rolecall" hidden></div>
+                <div class="weakspot" id="weakspot"></div>
             </div>
             <div class="warning-strip" id="warning"></div>
             <div class="host-foot">
@@ -573,7 +605,7 @@ function renderFightScreen(H) {
             <div class="host-controls" id="controls"></div>
         </div>
     </div>`);
-    H.ui = { arena: $('#arena'), fx: $('#fx-layer'), feed: $('#feed'), bossBar: $('#boss-bar'), bossText: $('#boss-hp-text'), phase: $('#phase-chip'), timer: $('#timer'), rolecall: $('#rolecall'), warning: $('#warning'), pips: $('#syn-pips'), mult: $('#syn-mult'), vitals: $('#vitals'), lives: $('#raid-lives'), alive: $('#alive-count') };
+    H.ui = { arena: $('#arena'), fx: $('#fx-layer'), feed: $('#feed'), bossBar: $('#boss-bar'), bossText: $('#boss-hp-text'), phase: $('#phase-chip'), timer: $('#timer'), rolecall: $('#rolecall'), weakspot: $('#weakspot'), warning: $('#warning'), pips: $('#syn-pips'), mult: $('#syn-mult'), vitals: $('#vitals'), lives: $('#raid-lives'), alive: $('#alive-count') };
     for (const html of H.feed.slice(-12)) { const d = document.createElement('div'); d.innerHTML = html; H.ui.feed.prepend(d); }
     if (H.boss) H.boss.destroy();
     H.boss = window.BossRenderer ? window.BossRenderer.create($('#boss-canvas'), H.stage.id) : null;
@@ -584,7 +616,7 @@ function renderFightScreen(H) {
 // Teacher controls. During a boss fight this includes CHAOS MODE: hit the squad
 // with a meteor, drain shields, start an infection, or reward a class you see
 // working together. Each tool has its own cooldown.
-const CHAOS_ICONS = { meteor: '☄', drain: '⛨', patient: '☣', strike: '✈', rally: '📦' };
+const CHAOS_ICONS = { meteor: '☄', drain: '⛨', patient: '☣', silence: '🔇', eshield: '🛡', strike: '✈', rally: '📦', weak: '🎯' };
 function renderControls(H) {
     const el = $('#controls');
     if (!el) return;
@@ -592,7 +624,7 @@ function renderControls(H) {
     el.innerHTML = `
         ${fight ? `<div class="chaos">
             <div class="chaos-h"><span class="label">🔥 CHAOS MODE</span><span class="label">teacher only</span></div>
-            <div class="chaos-grid">${['meteor', 'drain', 'patient', 'strike', 'rally'].map(k => `<button class="chaos-btn ${k === 'strike' || k === 'rally' ? 'help' : ''}" data-chaos="${k}" title="${CHAOS[k].desc}"><span class="ci">${CHAOS_ICONS[k]}</span><span class="cl">${CHAOS[k].label}</span><span class="cc" data-cd="${k}"></span></button>`).join('')}</div>
+            <div class="chaos-grid">${['meteor', 'drain', 'patient', 'silence', 'eshield', 'strike', 'rally', 'weak'].map(k => `<button class="chaos-btn ${k === 'strike' || k === 'rally' || k === 'weak' ? 'help' : ''}" data-chaos="${k}" title="${CHAOS[k].desc}"><span class="ci">${CHAOS_ICONS[k]}</span><span class="cl">${CHAOS[k].label}</span><span class="cc" data-cd="${k}"></span></button>`).join('')}</div>
             <div class="label" style="margin:8px 0 4px">REWARD TEAMWORK: +35% ULT</div>
             <div class="chaos-reward">${CLASS_IDS.map(c => `<button data-reward="${c}" style="--cls:${CLASSES[c].color}" title="Reward the ${CLASSES[c].name}s">${crest(c, { size: 26 })}</button>`).join('')}<span class="cc" data-cd="reward"></span></div>
         </div>` : ''}
@@ -675,8 +707,17 @@ function renderFight(H, now) {
         ui.warning.textContent = '';
     } else {
         rc.hidden = true;
-        ui.warning.textContent = atk ? `⚠ ${atk.name} IN ${Math.max(0, Math.ceil((atk.landsAt - now) / 1000))}s` : (b.stunUntil > now ? 'BOSS STAGGERED · EVERY CLASS: HIT IT NOW!' : b.exposedUntil > now ? 'BOSS EXPOSED: +25% DAMAGE' : '');
+        const secsLeft = atk ? Math.max(0, Math.ceil((atk.landsAt - now) / 1000)) : 0;
+        ui.warning.textContent = atk && atk.kind === 'mark' ? `⌖ SNIPER MARK: GUARDIANS, SHIELD THE TARGET! ${secsLeft}s`
+            : atk && atk.kind === 'silence' ? `🔇 ${atk.name}: SHIELD THEM OR THEY GO QUIET · ${secsLeft}s`
+            : atk ? `⚠ ${atk.name} IN ${secsLeft}s` : (b.stunUntil > now ? 'BOSS STAGGERED · EVERY CLASS: HIT IT NOW!' : b.exposedUntil > now ? 'BOSS EXPOSED: +25% DAMAGE' : '');
     }
+
+    // weak spot / elemental shield
+    const sh = b.eshield, w = b.weak && b.weak.until > now ? b.weak : null;
+    setHTML(ui.weakspot, sh
+        ? `<div class="ws eshield" style="--cls:${CLASSES[sh.cls].color}">${crest(sh.cls, { size: 54 })}<div><div class="ws-k">ELEMENTAL SHIELD · ${Math.max(0, Math.ceil((sh.endsAt - now) / 1000))}s</div><div class="ws-v">ONLY ${CLASSES[sh.cls].name.toUpperCase()}S CAN BREAK IT</div><div class="bar"><i style="width:${pct(sh.hp, sh.maxHp)}%"></i></div></div></div>`
+        : w ? `<div class="ws" style="--cls:${CLASSES[w.cls].color}">${crest(w.cls, { size: 46 })}<div><div class="ws-k">WEAK SPOT · ${Math.max(0, Math.ceil((w.until - now) / 1000))}s</div><div class="ws-v">${CLASSES[w.cls].name.toUpperCase()}S DEAL ×${w.mult}</div></div></div>` : '');
 
     // vitals
     const targets = new Set(atk ? atk.targets : []);
@@ -687,7 +728,7 @@ function renderFight(H, now) {
         <div class="vital ${p.status !== 'alive' ? p.status : ''} ${targets.has(p.id) && p.status === 'alive' ? 'targeted' : ''} ${p.infected && p.status === 'alive' ? 'infected' : ''}" data-cls="${p.cls}">
             ${crest(p.cls, { size: 30 })}
             <div style="min-width:0"><div class="v-name">${esc(p.name)}</div><div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div></div>
-            <div class="v-tags">${H.callouts[p.id] && now - H.callouts[p.id].at < 8000 ? `<span class="callout-badge ${H.callouts[p.id].k}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[H.callouts[p.id].k]}</span>` : ''}${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
+            <div class="v-tags">${H.callouts[p.id] && now - H.callouts[p.id].at < 8000 ? `<span class="callout-badge ${H.callouts[p.id].k}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[H.callouts[p.id].k]}</span>` : ''}${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.silenced > now && p.status === 'alive' ? '<span title="Silenced" style="color:#9fa8ff">🔇</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
         </div>`).join(''));
 }
 

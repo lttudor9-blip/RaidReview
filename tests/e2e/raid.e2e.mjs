@@ -159,7 +159,7 @@ while (Date.now() - t0 < 6 * 60000) {
         if (shots.stuAction && !shots.stuHit && r.startsWith('act') && i === 0) { await sleep(350); await shot(p, 's04b_damage_number'); shots.stuHit = true; }
         if (!shots.stuTarget && i === 2 && await p.$('.sq-card.targetable')) { await shot(p, 's04c_targeting'); shots.stuTarget = true; }
     }
-    const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, puzzles: H.engine.puzzleLog, boss: H.engine.boss && { id: H.engine.boss.id, hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call, lastStand: !!(H.engine.boss.lastStand && !H.engine.boss.lastStand.done), stunned: H.engine.boss.stunUntil > Date.now() } }; });
+    const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, puzzles: H.engine.puzzleLog, boss: H.engine.boss && { id: H.engine.boss.id, hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call, lastStand: !!(H.engine.boss.lastStand && !H.engine.boss.lastStand.done), stunned: H.engine.boss.stunUntil > Date.now(), eshield: !!H.engine.boss.eshield, weak: H.engine.boss.weak?.cls || null } }; });
     if (state.heroes > shots.hero && shots.hero < 2) { shots.hero = state.heroes; await sleep(500); await shot(host, `h06_hero_${shots.hero}`); await shot(students[0], `s08_hero_${shots.hero}`); }
     if (state.ended) break;
     // loot drop: each bot votes for its class's first upgrade card
@@ -188,6 +188,8 @@ while (Date.now() - t0 < 6 * 60000) {
         await shot(host, 'h12_chaos'); await shot(students[2], 's13_chaos_medic');
     }
     if (state.boss?.stunned && state.boss.id === 'raider' && !shots.stagger) { shots.stagger = true; await sleep(300); await shot(host, 'h14_stagger'); await shot(students[0], 's14_stagger'); }
+    if (state.boss?.eshield && !shots.eshield) { shots.eshield = true; await sleep(700); await shot(host, 'h17_eshield'); for (const [i, p] of students.entries()) await shot(p, `s18_eshield_${CLASSES[i]}`); }
+    if (state.boss?.weak && fightStart.t && Date.now() - fightStart.t > 4000 && !shots.weak) { shots.weak = true; await sleep(300); await shot(host, 'h18_weakspot'); const i = CLASSES.indexOf(state.boss.weak); if (i >= 0) await shot(students[i], 's19_weakspot_mine'); }
     if (state.boss?.lastStand && !shots.lastStand) { shots.lastStand = true; await sleep(300); await shot(host, 'h13_laststand'); await shot(students[1], 's15_laststand'); }
     if (state.boss?.call && !shots.rolecall) { await shot(host, 'h04_rolecall'); shots.rolecall = true; }
     if (state.boss?.call && !shots.stuCall) {

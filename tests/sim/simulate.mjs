@@ -6,7 +6,7 @@
 // `teamwork` is the chance a student notices a role call / ally in trouble and
 // responds — it stands in for how well the class communicates.
 
-import { createRaid, addPlayer, answer, act, canAct, startBoss, tick, restoreBetweenStages } from '../../next/js/rules/engine.js';
+import { createRaid, addPlayer, answer, act, canAct, startBoss, tick, restoreBetweenStages, isWeak } from '../../next/js/rules/engine.js';
 import { startPuzzle, applyPuzzleOutcome } from '../../next/js/rules/puzzles.js';
 import { CLASS_IDS } from '../../next/js/content/classes.js';
 import { FORMATS } from '../../next/js/content/raid.js';
@@ -31,6 +31,8 @@ function choose(s, p, now, rng, teamwork) {
         const target = p.cls === 'MEDIC' ? (down[0] || hurt[0] || p) : (s.players[b.attack.targets[0]] || p);
         if (ok('special')) return { ability: 'special', target: target.id };
     }
+    // the projector says this class hits the weak spot: supports switch to attacking
+    if (listens && isWeak(s, p, now) && p.cls !== 'WARRIOR' && !(p.cls === 'MEDIC' && down.length)) return { ability: 'basic' };
     switch (p.cls) {
         case 'WARRIOR':
             if (ok('ult') && (b.exposedUntil > now || !listens)) return { ability: 'ult' };
