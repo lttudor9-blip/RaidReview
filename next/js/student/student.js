@@ -97,38 +97,95 @@ function show(screen) {
     if (screen === 'game') updateGame();
 }
 
-// ================================================================= class select
+// ================================================================= class select (hero select)
+
+// A quick read on each class, like a hero-select screen (out of 5)
+const CLASS_STATS = {
+    WARRIOR: { DAMAGE: 5, DEFENSE: 2, SUPPORT: 1 },
+    GUARDIAN: { DAMAGE: 2, DEFENSE: 5, SUPPORT: 3 },
+    MEDIC: { DAMAGE: 1, DEFENSE: 2, SUPPORT: 5 },
+    TACTICIAN: { DAMAGE: 3, DEFENSE: 1, SUPPORT: 4 }
+};
+const PICK_LINES = {
+    WARRIOR: 'Biggest damage in the raid. Wait for a Tactician to Expose the boss, then drop your ultimate for SHATTER.',
+    GUARDIAN: 'The wall. Your Threat Radar shows who\'s about to get hit, and your Shield blocks it. Answer GUARDIAN role calls.',
+    MEDIC: 'The lifeline. See everyone\'s HP, heal whoever\'s lowest, and revive teammates who go down.',
+    TACTICIAN: 'The brain. You see the boss\'s next move first. Expose it so the whole team hits harder, and call out what\'s coming.'
+};
 
 function renderClasses() {
+    S.pendingClass = null;
     mount(`
-    <div class="screen center" style="justify-content:flex-start">
-        <div class="display" style="font-size:1.6rem;margin:10px 0 4px">CHOOSE YOUR CLASS</div>
-        <div class="muted" style="margin-bottom:14px">Your squad is strongest with all four classes. Pick what the team needs!</div>
-        <div class="class-grid">${CLASS_IDS.map(id => {
-            const c = CLASSES[id], a = c.abilities;
-            return `<button class="class-card" data-cls="${id}" data-pick="${id}">
-                <div class="row" style="align-items:center;gap:14px">${crest(id, { size: 76, glow: true })}<div><div class="role">${c.role} · ${CREST_NAMES[id]}</div><h3>${c.name.toUpperCase()}</h3></div></div>
-                <div class="muted"><i>${esc(c.tagline)}</i></div>
-                <ul><li><b>${a.special.name}</b> — ${esc(a.special.desc)}</li><li><b>★ ${a.ult.name}</b> — ${esc(a.ult.desc)}</li><li>${esc(c.passive)}</li></ul>
-                <div class="count" data-count="${id}"></div>
+    <div class="hs" id="hs">
+        <div class="hs-head">
+            <div class="label">ASSEMBLE YOUR SQUAD</div>
+            <div class="hs-title">CHOOSE YOUR CLASS</div>
+            <div class="muted">A squad with all four classes hits ×1.5 harder. Pick what your team needs!</div>
+        </div>
+        <div class="hs-grid" id="hs-grid">${CLASS_IDS.map(id => {
+            const c = CLASSES[id], a = c.abilities, st = CLASS_STATS[id];
+            return `<button class="hs-card" data-cls="${id}" data-pick="${id}">
+                <div class="hs-skin"></div>
+                <div class="hs-need" data-need="${id}"></div>
+                <div class="hs-crest">${crest(id, { size: 118, glow: true })}</div>
+                <div class="hs-role">${c.role.toUpperCase()} · ${CREST_NAMES[id].toUpperCase()}</div>
+                <div class="hs-name">${c.name.toUpperCase()}</div>
+                <div class="hs-tag">“${esc(c.tagline)}”</div>
+                <div class="hs-stats">${Object.entries(st).map(([k, v]) => `<div class="hs-stat"><span>${k}</span><span class="pips5">${Array.from({ length: 5 }, (_, i) => `<i class="${i < v ? 'on' : ''}"></i>`).join('')}</span></div>`).join('')}</div>
+                <div class="hs-abil">
+                    <div class="hs-ab"><span class="k">BASIC</span><div><b>${esc(a.basic.name)}</b> ${esc(a.basic.desc)}</div></div>
+                    <div class="hs-ab"><span class="k">SPECIAL</span><div><b>${esc(a.special.name)}</b> ${esc(a.special.desc)}</div></div>
+                    <div class="hs-ab ult"><span class="k">★ ULT</span><div><b>${esc(a.ult.name)}</b> ${esc(a.ult.desc)}</div></div>
+                </div>
+                <div class="hs-job"><span class="k">YOUR JOB</span>${esc(PICK_LINES[id])}</div>
+                <div class="hs-count" data-count="${id}"></div>
             </button>`;
         }).join('')}</div>
+        <div class="hs-foot"><button class="hs-lock" id="hs-lock" disabled>PICK A CLASS</button></div>
     </div>`);
-    document.querySelector('.class-grid').onclick = e => {
+    $('#hs-grid').onclick = e => {
         const card = e.target.closest('[data-pick]');
         if (!card) return;
         Audio.ensureCtx(); Audio.sfxBuff();
-        chooseClass(S.code, S.pid, card.dataset.pick);
+        S.pendingClass = card.dataset.pick;
+        document.querySelectorAll('.hs-card').forEach(c => c.classList.toggle('picked', c === card));
+        $('#hs').classList.add('has-pick');
+        $('#hs').dataset.cls = S.pendingClass;
+        const lock = $('#hs-lock');
+        lock.disabled = false;
+        lock.dataset.cls = S.pendingClass;
+        lock.innerHTML = `${crest(S.pendingClass, { size: 34 })} LOCK IN ${CLASSES[S.pendingClass].name.toUpperCase()}`;
+    };
+    $('#hs-lock').onclick = () => {
+        const cls = S.pendingClass;
+        if (!cls) return;
+        lockInMoment(cls);
+        chooseClass(S.code, S.pid, cls);
     };
     updateClassCounts();
 }
 
+function lockInMoment(cls) {
+    const c = CLASSES[cls];
+    const el = document.createElement('div');
+    el.className = 'lockin';
+    el.dataset.cls = cls;
+    el.innerHTML = `<div class="li-crest">${crest(cls, { size: 'min(40vh, 300px)', glow: true })}</div><div class="li-k">LOCKED IN</div><div class="li-name">${c.name.toUpperCase()}</div>`;
+    document.body.appendChild(el);
+    Audio.sfxUltimate();
+    flash(c.color, 0.4);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 450); }, 1500);
+}
+
 function updateClassCounts() {
-    const counts = Object.fromEntries(CLASS_IDS.map(c => [c, 0]));
-    for (const n of Object.values(S.room?.players || {})) if (n.profile?.cls) counts[n.profile.cls]++;
+    const counts = Object.fromEntries(CLASS_IDS.map(c => [c, []]));
+    for (const n of Object.values(S.room?.players || {})) if (n.profile?.cls) counts[n.profile.cls].push(n.profile.name);
     for (const c of CLASS_IDS) {
         const el = document.querySelector(`[data-count="${c}"]`);
-        if (el) el.innerHTML = counts[c] ? `${counts[c]} in the squad` : '<span class="gold">NEEDED — nobody yet!</span>';
+        const names = counts[c];
+        if (el) el.innerHTML = names.length ? `<b>${names.length}</b> in the squad: ${names.slice(0, 3).map(esc).join(', ')}${names.length > 3 ? '…' : ''}` : 'Nobody yet';
+        const need = document.querySelector(`[data-need="${c}"]`);
+        if (need) need.textContent = names.length ? '' : 'NEEDED!';
     }
 }
 
@@ -554,7 +611,7 @@ function drawQuestion(box) {
     const pub = S.me.pub;
     const kicker = pub.status === 'down' ? 'ANSWER TO REBOOT' : pub.status === 'out' ? 'ANSWER TO POWER THE RALLY' : 'ANSWER TO ATTACK';
     box.innerHTML = `<div class="qbox"><div class="label">${kicker}</div><div class="qt">${esc(q.text)}</div></div>
-        <div class="answers arming ${q.answers.length === 2 ? 'two' : ''}" id="g-ans">${order.map((orig, k) => `<button class="answer" data-k="${k}">${esc(q.answers[orig])}</button>`).join('')}</div>`;
+        <div class="answers arming ${q.answers.length === 2 ? 'two' : ''}" id="g-ans">${order.map((orig, k) => `<button class="answer" data-k="${k}"><span class="ak">${q.answers.length === 2 ? (k ? 'B' : 'A') : 'ABCD'[k]}</span><span class="at">${esc(q.answers[orig])}</span></button>`).join('')}</div>`;
     $('#g-ans').onclick = e => {
         const btn = e.target.closest('.answer');
         if (!btn || S.local !== 'question' || $('#g-ans').classList.contains('arming')) return;

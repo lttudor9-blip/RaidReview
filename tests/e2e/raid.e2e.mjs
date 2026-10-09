@@ -60,9 +60,11 @@ for (let i = 0; i < 4; i++) {
     const p = await ctx.newPage({ viewport: phone }); watch(p, CLASSES[i]);
     await p.setViewportSize(phone);
     await p.goto(`http://raid.test/next/play.html?room=${code}&name=Bot${i + 1}`);
-    await p.waitForSelector('.class-card', { timeout: 10000 });
+    await p.waitForSelector('.hs-card', { timeout: 10000 });
     if (i === 0) await shot(p, 's01_class_select');
     await p.click(`[data-pick="${CLASSES[i]}"]`);
+    if (i === 0) await shot(p, 's01b_class_picked');
+    await p.click('#hs-lock');
     await p.waitForSelector('#t-skip', { timeout: 10000 });
     if (i === 0) {
         await shot(p, 's02_tutorial');
@@ -90,7 +92,7 @@ async function botStep(p, accuracy) {
         const q = document.querySelector('.qbox .qt');
         const ans = [...document.querySelectorAll('#g-ans .answer')];
         if (q && ans.length && !document.querySelector('#g-ans.locked') && !document.querySelector('#g-ans.arming')) {
-            const right = ans.find(a => a.textContent === known[q.textContent]);
+            const right = ans.find(a => (a.querySelector('.at') || a).textContent === known[q.textContent]);
             const choice = Math.random() < accuracy ? right : ans.find(a => a !== right);
             (choice || ans[0]).click();
             return 'answer';
