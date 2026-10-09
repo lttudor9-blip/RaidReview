@@ -35,4 +35,8 @@ What was really going on:
 
 **Puzzles:** students really liked them. They failed the first time, learned from their mistakes, and solved it on the next try. This is the loop we want: failing should teach, not just punish.
 
-**Feature requests from students:** to be collected.
+**Feature requests from students:**
+1. A puzzle after every boss
+2. More team synergies and combos
+3. Leaderboards
+4. Loot drops, or a class vote on an upgrade, skill-tree perk or power-up after each wave
