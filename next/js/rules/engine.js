@@ -137,6 +137,7 @@ export function act(state, pid, { ability, target } = {}, now) {
     const d = difficultyOf(state);
     const ab = CLASSES[p.cls].abilities[ability];
     const ev = [];
+    state.now = now;
 
     p.armed = false;
     state.team.syn[p.cls] = now;
@@ -161,7 +162,11 @@ export function act(state, pid, { ability, target } = {}, now) {
             b.hp = Math.max(0, b.hp - amount);
             p.stats.dmg += amount;
             ev.push({ type: 'hit', pid, ability, amount, crit, combo });
-            if (combo) ev.push({ type: 'combo', name: combo, pid });
+            if (combo) {
+                ev.push({ type: 'combo', name: combo, pid });
+                const setter = state.players[b.exposedBy];
+                if (setter && setter.id !== pid) ev.push({ type: 'hero', kind: 'perfectCombo', pids: [setter.id, pid], amount });
+            }
             break;
         }
         case 'shield': {
@@ -191,16 +196,21 @@ export function act(state, pid, { ability, target } = {}, now) {
         case 'expose': {
             b.exposedUntil = now + ab.duration;
             b.exposeBonus = ab.bonus;
+            b.exposedBy = p.id;
             p.ult = Math.min(100, p.ult + ULT_PER_SUPPORT);
             ev.push({ type: 'expose', pid, until: b.exposedUntil });
             break;
         }
         case 'dome': {
             state.team.dome = now + ab.duration;
+            state.team.domeBy = p.id;
             ev.push({ type: 'dome', pid, until: state.team.dome });
             break;
         }
         case 'massHeal': {
+            const squad = playersOf(state).filter(a => a.status !== 'out');
+            const standing = squad.filter(a => a.status === 'alive').length;
+            const downBefore = squad.length - standing;
             for (const a of playersOf(state)) {
                 if (a.status === 'down') revive(state, a, ab.reviveAmount, pid, ev);
                 else if (a.status === 'alive') {
@@ -210,13 +220,24 @@ export function act(state, pid, { ability, target } = {}, now) {
                 }
             }
             ev.push({ type: 'massHeal', pid });
+            // the squad was on the brink and one Medic brought it back
+            if (downBefore >= 2 || (downBefore >= 1 && standing <= Math.max(1, Math.floor(squad.length / 3)))) {
+                ev.push({ type: 'hero', kind: 'squadSave', pids: [pid], revived: downBefore });
+            }
             break;
         }
         case 'breach': {
-            if (b.attack) { ev.push({ type: 'interrupt', pid, attack: b.attack.id }); b.attack = null; }
+            if (b.attack) {
+                const big = b.attack.kind === 'aoe' || !!b.attack.call;
+                ev.push({ type: 'interrupt', pid, attack: b.attack.id });
+                if (big && !b.attack.call?.done) ev.push({ type: 'hero', kind: 'interrupt', pids: [pid], attack: b.attack.name });
+                b.attack = null;
+            }
             b.stunUntil = now + ab.stun;
+            b.telegraph = null;
             b.exposedUntil = now + ab.expose;
             b.exposeBonus = CLASSES.TACTICIAN.abilities.special.bonus;
+            b.exposedBy = p.id;
             ev.push({ type: 'breach', pid });
             break;
         }
@@ -227,7 +248,7 @@ export function act(state, pid, { ability, target } = {}, now) {
 
     countRoleCall(state, p, ability, ev);
     checkPhase(state, ev);
-    checkDefeat(state, now, ev);
+    checkDefeat(state, now, ev, pid);
     return ev;
 }
 
@@ -245,6 +266,7 @@ function knockDown(state, p, ev) {
     p.status = p.lives > 0 ? 'down' : 'out';
     p.revive = 0; p.shield = false; p.infected = 0; p.armed = false; p.streak = 0;
     p.stats.downs++;
+    if (state.boss) state.boss.downs = (state.boss.downs || 0) + 1;
     ev.push({ type: p.status === 'out' ? 'eliminated' : 'down', pid: p.id });
 }
 
@@ -285,7 +307,12 @@ function countRoleCall(state, p, ability, ev) {
     call.who[key] = p.id;
     const have = Object.keys(call.who).length;
     ev.push({ type: 'roleCallProgress', pid: p.id, have, need: call.need });
-    if (have >= call.need) { call.done = true; ev.push({ type: 'roleCallMet' }); }
+    if (have >= call.need) {
+        call.done = true;
+        ev.push({ type: 'roleCallMet' });
+        const left = state.boss.attack.landsAt - (state.now || 0);
+        if (state.now && left <= 2000) ev.push({ type: 'hero', kind: 'clutchCall', pids: Object.values(call.who), secs: Math.max(0, left / 1000) });
+    }
 }
 
 function makeCall(state, roleCall, text) {
@@ -319,6 +346,7 @@ export function startBoss(state, bossId, now) {
         attack: null, cds: {}, defeatedAt: 0
     };
     B.attacks.forEach((a, i) => { state.boss.cds[a.id] = now + a.cooldown * 0.5 + i * 4000; });
+    state.boss.telegraph = null;
     state.team.dome = 0;
     for (const p of playersOf(state)) { p.infected = 0; p.armed = false; }
     state.status = 'boss';
@@ -340,13 +368,16 @@ function checkPhase(state, ev) {
     }
 }
 
-function checkDefeat(state, now, ev) {
+function checkDefeat(state, now, ev, byPid) {
     const b = state.boss;
     if (b && b.hp <= 0 && !b.defeatedAt) {
         b.hp = 0;
         b.defeatedAt = now;
         b.attack = null;
-        ev.push({ type: 'bossDefeated', boss: b.id });
+        ev.push({ type: 'bossDefeated', boss: b.id, by: byPid || null });
+        const killer = byPid && state.players[byPid];
+        if (killer) ev.push({ type: 'hero', kind: killer.hp / killer.maxHp < 0.25 ? 'lastStand' : 'finalBlow', pids: [killer.id], boss: b.name });
+        if (!b.downs) ev.push({ type: 'hero', kind: 'flawless', pids: [], boss: b.name });
     }
 }
 
@@ -374,8 +405,15 @@ function pickTargets(state, a, rng) {
     return out;
 }
 
+// The boss picks who it will hit a few seconds before it winds up, so Guardians'
+// threat radar can see it coming and get a shield up in time.
+export const TELEGRAPH_MS = 5000;
+
 function startAttack(state, a, now, rng) {
-    const targets = pickTargets(state, a, rng);
+    const tg = state.boss.telegraph;
+    const planned = tg && tg.id === a.id ? tg.targets.filter(id => state.players[id]?.status === 'alive') : [];
+    const targets = planned.length ? planned : pickTargets(state, a, rng);
+    state.boss.telegraph = null;
     if (!targets.length) return null;
     const windup = Math.round(a.windup * difficultyOf(state).windup);
     state.boss.attack = {
@@ -404,7 +442,11 @@ function resolveAttack(state, now, ev) {
         return;
     }
     if (atk.call) ev.push({ type: 'roleCallFailed', attack: atk.id, call: atk.call });
-    if (state.team.dome > now) { ev.push({ type: 'domeBlock', attack: atk.id }); return; }
+    if (state.team.dome > now) {
+        ev.push({ type: 'domeBlock', attack: atk.id });
+        if ((atk.kind === 'aoe' || atk.targets.length >= 3) && state.players[state.team.domeBy]) ev.push({ type: 'hero', kind: 'domeSave', pids: [state.team.domeBy], attack: atk.name });
+        return;
+    }
 
     ev.push({ type: 'attack', attack: atk.id, name: atk.name, targets: atk.targets });
     for (const pid of atk.targets) {
@@ -463,9 +505,19 @@ export function tick(state, now, rng = Math.random) {
     if (b.attack) {
         if (now >= b.attack.landsAt) resolveAttack(state, now, ev);
     } else if (now >= b.stunUntil) {
-        const ready = BOSSES[b.id].attacks.filter(a => (b.cds[a.id] || 0) <= now);
+        const attacks = BOSSES[b.id].attacks;
+        // plan the next single-target attack ahead of time (threat radar)
+        if (!b.telegraph) {
+            const next = attacks.filter(a => a.kind !== 'aoe').sort((x, y) => (b.cds[x.id] || 0) - (b.cds[y.id] || 0))[0];
+            if (next && (b.cds[next.id] || 0) - now <= TELEGRAPH_MS) {
+                const targets = pickTargets(state, next, rng);
+                if (targets.length) b.telegraph = { id: next.id, name: next.name, targets, at: Math.max(now, b.cds[next.id] || 0) };
+            }
+        }
+        const ready = attacks.filter(a => (b.cds[a.id] || 0) <= now);
         if (ready.length) {
-            const a = ready[Math.floor(rng() * ready.length)];
+            // a planned attack goes first so the radar never lies
+            const a = (b.telegraph && ready.find(x => x.id === b.telegraph.id)) || ready[Math.floor(rng() * ready.length)];
             const e = startAttack(state, a, now, rng);
             if (e) ev.push(e);
         }

@@ -197,3 +197,45 @@ test('a teammate\'s shield that blocks a boss hit counts as a save for the Guard
     assert.equal(block.by, 'p1');
     assert.equal(s.players.p1.stats.saves, 1);
 });
+
+test('hero moment: Field Hospital pulls a squad back from the brink', () => {
+    const s = raid(['MEDIC', 'WARRIOR', 'GUARDIAN', 'TACTICIAN']);
+    for (const pid of ['p1', 'p2', 'p3']) { s.players[pid].status = 'down'; s.players[pid].hp = 0; }
+    s.players.p0.ult = 100;
+    answer(s, 'p0', true, 0);
+    const ev = act(s, 'p0', { ability: 'ult' }, 0);
+    const hero = ev.find(e => e.type === 'hero');
+    assert.equal(hero.kind, 'squadSave');
+    assert.deepEqual(hero.pids, ['p0']);
+    assert.equal(hero.revived, 3);
+});
+
+test('hero moment: Tactician sets up the Warrior\'s SHATTER', () => {
+    const s = raid();
+    s.players.p3.ult = 100; s.players.p0.ult = 100;
+    answer(s, 'p3', true, 0); act(s, 'p3', { ability: 'ult' }, 0);
+    answer(s, 'p0', true, 500);
+    const ev = act(s, 'p0', { ability: 'ult' }, 500);
+    const hero = ev.find(e => e.type === 'hero' && e.kind === 'perfectCombo');
+    assert.deepEqual(hero.pids, ['p3', 'p0']);
+});
+
+test('hero moment: final blow and flawless boss kill', () => {
+    const s = raid();
+    s.boss.hp = 10;
+    answer(s, 'p0', true, 0);
+    const ev = act(s, 'p0', { ability: 'basic' }, 0);
+    assert.ok(ev.some(e => e.type === 'hero' && e.kind === 'finalBlow' && e.pids[0] === 'p0'));
+    assert.ok(ev.some(e => e.type === 'hero' && e.kind === 'flawless'));
+});
+
+test('threat radar: the boss plans single-target attacks ahead and keeps its word', () => {
+    const s = raid();
+    s.boss.cds = { saw: 4000, slam: Infinity };
+    tick(s, 0, seededRng(4));
+    const plan = s.boss.telegraph;
+    assert.ok(plan && plan.id === 'saw' && plan.targets.length >= 1);
+    const ev = tick(s, 4000, seededRng(9));
+    const wind = ev.find(e => e.type === 'windup');
+    assert.deepEqual(wind.targets, plan.targets);
+});

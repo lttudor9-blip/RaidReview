@@ -3,6 +3,8 @@
 
 import { CLASSES } from '../content/classes.js';
 import { mount, esc, fmtNum } from '../ui.js';
+import { crest } from '../content/crests.js';
+import { heroColor } from '../content/heroes.js';
 
 const AWARDS = [
     { title: 'RAID MVP', stat: p => p.stats.dmg, fmt: v => `${fmtNum(v)} damage` },
@@ -53,7 +55,10 @@ export function renderResults(H, won) {
                 <div class="muted" style="font-size:1.3rem">${won ? 'Every boss defeated.' : `The squad made it to stage ${H.stageIdx + 1} of ${H.stages.length}.`} Class accuracy: <b class="gold">${classAcc}%</b> on ${totalR + totalW} answers.</div>
             </div>
             ${awards.length && ps.length > 1 ? `<div class="awards">${awards.map(a => `
-                <div class="award" data-cls="${a.p.cls}"><div class="aw-title">${a.title}</div><div class="aw-name">${esc(a.p.name)}</div><div class="aw-stat">${CLASSES[a.p.cls].name} · ${a.fmt(a.value, a.p)}</div></div>`).join('')}</div>` : ''}
+                <div class="award" data-cls="${a.p.cls}" style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center">${crest(a.p.cls, { size: 64, glow: true })}<div><div class="aw-title">${a.title}</div><div class="aw-name">${esc(a.p.name)}</div><div class="aw-stat">${CLASSES[a.p.cls].name} · ${a.fmt(a.value, a.p)}</div></div></div>`).join('')}</div>` : ''}
+            ${H.heroes.length ? `<div class="panel"><div class="label" style="margin-bottom:8px">★ HERO MOMENTS</div>${H.heroes.slice(0, 8).map(h => `
+                <div class="missed-row" style="grid-template-columns:auto 1fr;align-items:center"><div style="display:flex;gap:4px">${h.pids.map(pid => H.engine.players[pid]).filter(Boolean).map(p => crest(p.cls, { size: 40 })).join('') || '★'}</div>
+                <div><div class="display" style="font-size:1.15rem;color:${heroColor(h.kind)}">${esc(h.title)}</div><div class="muted">${esc(h.sub)}</div></div></div>`).join('')}</div>` : ''}
             <div class="panel">
                 <div class="label" style="margin-bottom:8px">MOST MISSED QUESTIONS — WHAT TO RETEACH</div>
                 ${missed.length ? missed.slice(0, 6).map(m => `

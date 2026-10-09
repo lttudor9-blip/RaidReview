@@ -19,7 +19,7 @@ export const BOSSES = {
         intro: '"Your luck just ran out."',
         attacks: [
             { id: 'suppress', name: 'SUPPRESSING FIRE', kind: 'strike', targets: 3, dmg: 0.32, cooldown: 18000, windup: 5000 },
-            { id: 'rail', name: 'RAIL SHOT', kind: 'lowest', targets: 3, dmg: 0.75, cooldown: 30000, windup: 10000, roleCall: 'TACTICIAN', callText: 'JAM THE RIFLE' }
+            { id: 'rail', name: 'RAIL SHOT', kind: 'lowest', targets: 3, dmg: 0.6, cooldown: 30000, windup: 10000, roleCall: 'TACTICIAN', callText: 'JAM THE RIFLE' }
         ]
     },
     construct: {
@@ -28,7 +28,7 @@ export const BOSSES = {
         attacks: [
             { id: 'pulse', name: 'SYSTEM PULSE', kind: 'aoe', dmg: 0.45, cooldown: 30000, windup: 10000, roleCall: 'TACTICIAN', callText: 'JAM THE SIGNAL' },
             { id: 'virus', name: 'VIRUS UPLOAD', kind: 'infect', targets: 1, dmg: 0.1, cooldown: 35000, windup: 5000 },
-            { id: 'lock', name: 'LOCK ON', kind: 'lowest', targets: 3, dmg: 0.75, cooldown: 28000, windup: 10000, roleCall: 'MEDIC', callText: 'PATCH THEM UP' }
+            { id: 'lock', name: 'LOCK ON', kind: 'lowest', targets: 3, dmg: 0.6, cooldown: 28000, windup: 10000, roleCall: 'MEDIC', callText: 'PATCH THEM UP' }
         ]
     },
     omega: {
@@ -36,7 +36,7 @@ export const BOSSES = {
         intro: '"This is where it ends. For ALL of you."',
         attacks: [
             { id: 'barrage', name: 'OMEGA BARRAGE', kind: 'strike', targets: 4, dmg: 0.35, cooldown: 16000, windup: 5000 },
-            { id: 'annihilate', name: 'ANNIHILATE', kind: 'lowest', targets: 3, dmg: 0.9, cooldown: 28000, windup: 10000, roleCall: 'GUARDIAN', callText: 'PROTECT THEM' },
+            { id: 'annihilate', name: 'ANNIHILATE', kind: 'lowest', targets: 3, dmg: 0.75, cooldown: 28000, windup: 10000, roleCall: 'GUARDIAN', callText: 'PROTECT THEM' },
             { id: 'extinction', name: 'EXTINCTION WAVE', kind: 'aoe', dmg: 0.6, cooldown: 42000, windup: 12000, roleCall: 'ALL', callText: 'EVERY CLASS — ACT NOW' }
         ]
     }

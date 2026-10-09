@@ -34,7 +34,7 @@ function choose(s, p, now, rng, teamwork) {
             return ok('special') ? { ability: 'special' } : { ability: 'basic' };
         case 'GUARDIAN': {
             if (callForMe && ok('ult') && call.cls !== 'ANY') return { ability: 'ult' };
-            const target = (b.attack?.targets || []).map(id => s.players[id]).find(a => a && !a.shield && a.status === 'alive')
+            const target = [...(b.attack?.targets || []), ...(b.telegraph?.targets || [])].map(id => s.players[id]).find(a => a && !a.shield && a.status === 'alive')
                 || allies.find(a => a.status === 'alive' && !a.shield);
             if ((callForMe || listens) && ok('special') && target) return { ability: 'special', target: target.id };
             if (ok('ult') && b.attack && listens) return { ability: 'ult' };

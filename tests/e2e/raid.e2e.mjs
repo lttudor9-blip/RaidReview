@@ -109,7 +109,8 @@ async function botStep(p, accuracy) {
 }
 
 const t0 = Date.now();
-let shots = { rolecall: false, stuAction: false, stuCall: false, fight: false };
+let shots = { rolecall: false, stuAction: false, stuCall: false, fight: false, classes: false, reveal: false, hero: 0 };
+const fightStart = { t: 0 };
 const counts = {};
 while (Date.now() - t0 < 6 * 60000) {
     for (const [i, p] of students.entries()) {
@@ -119,15 +120,18 @@ while (Date.now() - t0 < 6 * 60000) {
         if (shots.stuAction && !shots.stuHit && r.startsWith('act') && i === 0) { await sleep(350); await shot(p, 's04b_damage_number'); shots.stuHit = true; }
         if (!shots.stuTarget && i === 2 && await p.$('.sq-card.targetable')) { await shot(p, 's04c_targeting'); shots.stuTarget = true; }
     }
-    const state = await host.evaluate(() => { const H = window.__rrHost; return { stage: H.stage, ended: H.ended, boss: H.engine.boss && { hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call } }; });
+    const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, boss: H.engine.boss && { hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call } }; });
+    if (state.heroes > shots.hero && shots.hero < 2) { shots.hero = state.heroes; await sleep(500); await shot(host, `h06_hero_${shots.hero}`); await shot(students[0], `s08_hero_${shots.hero}`); }
     if (state.ended) break;
-    if (!shots.fight && state.stage?.phase === 'fight') { await sleep(400); await shot(host, 'h03_fight'); shots.fight = true; }
+    if (!shots.reveal && await students[0].$('.class-reveal')) { await shot(students[0], 's00_class_reveal'); shots.reveal = true; }
+    if (!shots.fight && state.stage?.phase === 'fight') { await sleep(400); await shot(host, 'h03_fight'); shots.fight = true; fightStart.t = Date.now(); }
+    if (!shots.classes && fightStart.t && Date.now() - fightStart.t > 9000) { for (const [i, p] of students.entries()) await shot(p, `s07_${CLASSES[i]}`); shots.classes = true; }
     if (state.boss?.call && !shots.rolecall) { await shot(host, 'h04_rolecall'); shots.rolecall = true; }
     if (state.boss?.call && !shots.stuCall) {
         for (const [i, p] of students.entries()) if (await p.$('.callout.mine')) { await shot(p, `s05_rolecall_${CLASSES[i]}`); shots.stuCall = true; break; }
     }
     // keep the run short: once each fight has shown a role call, speed the boss toward defeat
-    if (state.stage?.phase === 'fight' && shots.rolecall && state.boss && state.boss.hp > state.boss.max * 0.05) {
+    if (state.stage?.phase === 'fight' && shots.rolecall && shots.classes && state.boss && state.boss.hp > state.boss.max * 0.05) {
         await host.evaluate(() => { const b = window.__rrHost.engine.boss; b.hp = Math.max(1, b.hp - b.maxHp * 0.04); });
     }
     await sleep(350);

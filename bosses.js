@@ -1149,6 +1149,7 @@
         const octx = off.getContext('2d');
         let W = 1, H = 1, dpr = 1, S = 1, ox = 0, oy = 0;
         let raf = 0, last = 0, destroyed = false;
+        let painting = false; // becomes true once everything paint() needs exists
 
         const s = {
             t: 0, look: 0, hp: 1, hitK: 0, atk: 0,
@@ -1170,16 +1171,18 @@
 
         function resize() {
             const r = canvas.getBoundingClientRect();
-            dpr = Math.min(2, window.devicePixelRatio || 1);
+            dpr = Math.min(opts.maxDpr || 2, window.devicePixelRatio || 1); // maxDpr 1 = lighter rendering for cheap Chromebooks
             W = Math.max(1, Math.round(r.width * dpr));
             H = Math.max(1, Math.round(r.height * dpr));
             // size each buffer on its own: a canvas reused from an earlier boss
             // is already the right size, but this boss's offscreen buffer is not
-            if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+            const resized = canvas.width !== W || canvas.height !== H;
+            if (resized) { canvas.width = W; canvas.height = H; }
             if (off.width !== W || off.height !== H) { off.width = W; off.height = H; }
             S = Math.min(W, H) / WORLD * (D.zoom || 1);
             ox = (W - WORLD * S) / 2;
             oy = (H - WORLD * S) / 2;
+            if (resized && painting) paint();
         }
         const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
         if (ro) ro.observe(canvas); else window.addEventListener('resize', resize);
@@ -1453,7 +1456,12 @@
             const dt = last ? Math.min(0.05, (now - last) / 1000) : 0.016;
             last = now;
             update(dt);
+            paint();
+        }
 
+        // Draw the current state. Also called straight after a resize, because
+        // resizing wipes the canvas and a paused tab might not animate again soon.
+        function paint() {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = 'source-over';
@@ -1498,10 +1506,12 @@
             worldTransform(ctx);
             drawParticles(ctx, parts, false);
         }
+        painting = true;
         raf = requestAnimationFrame(frame);
 
         const api = {
             type, name: D.name, color: D.color,
+            _debug: () => ({ dying: s.dying, deathT: s.deathT, introT: s.introT, hp: s.hp, hitK: s.hitK, W, H, S, destroyed }),
             setPhase(p) {
                 const next = (p || 'NORMAL').toUpperCase();
                 const rank = { NORMAL: 0, ENRAGED: 1, DESPERATE: 2 };

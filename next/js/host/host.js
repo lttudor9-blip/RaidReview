@@ -11,6 +11,8 @@ import { createRoom, listenRoom, updateRoom } from '../net/room.js';
 import { AudioEngine as Audio } from '../audio.js';
 import { mount, esc, $, floater, flash, shake, fmtNum, fmtClock, pct, toast } from '../ui.js';
 import { renderResults } from './results.js';
+import { crest } from '../content/crests.js';
+import { heroText, heroColor } from '../content/heroes.js';
 
 const CALLSIGN_A = ['SHADOW', 'IRON', 'GHOST', 'STORM', 'CRIMSON', 'STEEL', 'FROST', 'VOID', 'NEON', 'SILENT', 'RAPID', 'RAZOR', 'COSMIC', 'ROGUE', 'APEX', 'DUSK', 'EMBER', 'COBALT', 'SOLAR', 'ONYX'];
 const CALLSIGN_B = ['VIPER', 'PHOENIX', 'WOLF', 'HAWK', 'TITAN', 'PHANTOM', 'STRIKER', 'BLADE', 'WRAITH', 'SURGE', 'FANG', 'NOVA', 'COBRA', 'RAVEN', 'SPECTER', 'RAPTOR', 'CIPHER', 'BOLT', 'SENTRY', 'COMET'];
@@ -29,7 +31,8 @@ export async function startHost({ questions, title, hostUid }) {
         callsignsUsed: new Set(), names: {},
         counts: {}, // event tally, for the end screen and debugging
         pfx: {},    // per-student effect channels
-        callouts: {}
+        callouts: {},
+        heroes: []  // hero moments, replayed on the results screen
     };
     H.engine = createRaid({ difficulty: H.settings.difficulty });
     H.code = await createRoom({ hostUid, title, questions, settings: H.settings });
@@ -164,7 +167,7 @@ function setIfChanged(H, out, path, value) {
 // ================================================================= events → visuals
 
 // Team-wide moments every Chromebook reacts to
-const TEAM_FX = new Set(['infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'attack', 'bossDefeated', 'breach', 'expose']);
+const TEAM_FX = new Set(['hero', 'infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'attack', 'bossDefeated', 'breach', 'expose']);
 // Personal moments go to each involved student's own channel (players/{pid}/fx),
 // so a busy room never pushes someone's damage number out of the shared list
 const PERSONAL_KEYS = ['pid', 'target', 'by'];
@@ -249,11 +252,33 @@ function visual(H, ev) {
             flash(ev.phase === 'DESPERATE' ? '#ff4757' : '#ffa502', 0.3);
             break;
         case 'enrage': floater(layer, 'TIME\'S UP — BOSS ENRAGED', { color: '#ff4757', size: '3rem', y: 50 }); boss && boss.setPhase('ENRAGED'); break;
+        case 'hero': heroMoment(H, ev); break;
         case 'wipe': showWipe(H, ev); break;
         case 'regrouped': hideOverlay(H); Audio.setPhase(H.engine.boss?.phase || 'NORMAL'); break;
         case 'bossDefeated': onBossDefeated(H); break;
         case 'raidDefeat': endRaid(H, false); break;
     }
+}
+
+// A hero moment takes over the arena for a beat: crests, name, what they did.
+function heroMoment(H, ev) {
+    const name = pid => H.engine.players[pid]?.name || '?';
+    const t = heroText(ev, name);
+    const color = heroColor(ev.kind);
+    H.heroes.push({ ...t, kind: ev.kind, pids: ev.pids || [], stage: H.stageIdx, boss: H.stage?.id });
+    logFeed(H, `<b style="color:${color}">★ ${esc(t.title)}</b> ${esc(t.sub)}`);
+    const arena = H.ui.arena;
+    if (!arena) return;
+    const el = document.createElement('div');
+    el.className = 'hero-moment';
+    el.style.setProperty('--hc', color);
+    const crests = (ev.pids || []).map(pid => H.engine.players[pid]).filter(Boolean).map(p => crest(p.cls, { size: 120, glow: true })).join('<span class="hm-plus">+</span>');
+    el.innerHTML = `<div class="hm-kicker">★ HERO MOMENT ★</div>${crests ? `<div class="hm-crests">${crests}</div>` : ''}<div class="hm-title">${esc(t.title)}</div><div class="hm-sub">${esc(t.sub)}</div>`;
+    arena.querySelectorAll('.hero-moment').forEach(x => x.remove());
+    arena.appendChild(el);
+    flash(color, 0.45); shake(arena);
+    Audio.sfxAchievement(); setTimeout(() => Audio.sfxStreak(), 250);
+    setTimeout(() => el.remove(), 3600);
 }
 
 function logFeed(H, html) {
@@ -449,7 +474,7 @@ function renderLobbySquad(H) {
     const waiting = Object.values(H.room?.players || {}).filter(n => n.profile && !n.profile.cls).length;
     el.innerHTML = CLASS_IDS.map(c => {
         const list = ps.filter(p => p.cls === c);
-        return `<div class="squad-col" data-cls="${c}"><h4><span>${CLASSES[c].name.toUpperCase()}S</span><span>${list.length}</span></h4>
+        return `<div class="squad-col" data-cls="${c}"><div style="text-align:center;margin-bottom:6px">${crest(c, { size: 72, glow: list.length > 0 })}</div><h4><span>${CLASSES[c].name.toUpperCase()}S</span><span>${list.length}</span></h4>
             <div class="names">${list.map(p => `<span data-pid="${p.id}" title="Click to remove" style="cursor:pointer">${esc(p.name)}</span>`).join('')}</div></div>`;
     }).join('');
     const classes = new Set(ps.map(p => p.cls)).size;
@@ -564,7 +589,7 @@ function renderFight(H, now) {
     ui.lives.innerHTML = `RAID LIVES <span style="color:#ff4757;font-size:1.3rem">${'♥'.repeat(Math.max(0, e.raidLives))}</span>${e.team.dome > now ? ' · <span style="color:#4a6cff">DOME</span>' : ''}`;
     ui.vitals.innerHTML = ps.sort((a, b2) => CLASS_IDS.indexOf(a.cls) - CLASS_IDS.indexOf(b2.cls)).map(p => `
         <div class="vital ${p.status !== 'alive' ? p.status : ''} ${targets.has(p.id) && p.status === 'alive' ? 'targeted' : ''}" data-cls="${p.cls}">
-            <div class="stripe"></div>
+            ${crest(p.cls, { size: 30 })}
             <div style="min-width:0"><div class="v-name">${esc(p.name)}</div><div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div></div>
             <div class="v-tags">${H.callouts[p.id] && now - H.callouts[p.id].at < 8000 ? `<span class="callout-badge ${H.callouts[p.id].k}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[H.callouts[p.id].k]}</span>` : ''}${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
         </div>`).join('');

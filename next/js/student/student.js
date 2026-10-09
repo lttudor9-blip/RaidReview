@@ -10,6 +10,8 @@ import { playerIdFor, joinRoom, chooseClass, sendIntent, listenRoom, lookupRoom 
 import { AudioEngine as Audio } from '../audio.js';
 import { mount, esc, $, toast, flash, shake, fmtNum, pct } from '../ui.js';
 import { damageNumber, textPop, hitMarker, slam, streakName, unlock, unlockedList, ACHIEVEMENTS, achievementDesc, confetti } from './juice.js';
+import { crest, CREST_NAMES } from '../content/crests.js';
+import { heroText, heroColor } from '../content/heroes.js';
 
 const S = {
     code: null, pid: null, room: null, me: null, live: {},
@@ -19,6 +21,7 @@ const S = {
 };
 
 export async function startStudent({ name, room }) {
+    window.__rrStudent = S; // handy for debugging from the console
     Audio.init();
     if (!name || !room) return renderJoin(name, room);
     return join(name.trim().slice(0, 16), String(room).trim());
@@ -104,7 +107,7 @@ function renderClasses() {
         <div class="class-grid">${CLASS_IDS.map(id => {
             const c = CLASSES[id], a = c.abilities;
             return `<button class="class-card" data-cls="${id}" data-pick="${id}">
-                <div class="role">${c.role}</div><h3>${c.name.toUpperCase()}</h3>
+                <div class="row" style="align-items:center;gap:14px">${crest(id, { size: 76, glow: true })}<div><div class="role">${c.role} · ${CREST_NAMES[id]}</div><h3>${c.name.toUpperCase()}</h3></div></div>
                 <div class="muted"><i>${esc(c.tagline)}</i></div>
                 <ul><li><b>${a.special.name}</b> — ${esc(a.special.desc)}</li><li><b>★ ${a.ult.name}</b> — ${esc(a.ult.desc)}</li><li>${esc(c.passive)}</li></ul>
                 <div class="count" data-count="${id}"></div>
@@ -166,7 +169,8 @@ function renderTutorial() {
 function renderWaiting() {
     const c = CLASSES[S.me.profile.cls];
     mount(`<div class="screen center" data-cls="${c.id}">
-        <div class="label">YOU ARE A</div>
+        ${crest(c.id, { size: 150, glow: true })}
+        <div class="label" style="margin-top:14px">YOU ARE A</div>
         <div class="display" style="font-size:2.6rem;color:var(--cls)">${c.name.toUpperCase()}</div>
         <div class="muted" style="margin:8px 0 22px">${esc(c.tagline)}</div>
         <div class="display" style="font-size:1.1rem;animation:pulse 1.4s infinite">WAITING FOR YOUR TEACHER TO START…</div>
@@ -191,21 +195,33 @@ function renderKicked() {
 // wrong clock still shows the right seconds.
 const hostNow = () => Date.now() + (S.clockOffset || 0);
 
+// What each class is told its job is, on the class reveal
+const ROLE_LINES = {
+    WARRIOR: 'Hit like a truck. When a Tactician Exposes the boss, unleash your ultimate for SHATTER.',
+    GUARDIAN: 'Watch your Threat Radar. Shield whoever the boss is about to hit before it lands.',
+    MEDIC: 'Watch the vitals. Heal the lowest, cure infections, and revive anyone who goes down.',
+    TACTICIAN: 'You see the boss\'s next move first. Call it out, and Expose the boss so everyone hits harder.'
+};
+const INTEL_TITLES = { WARRIOR: 'STRIKE WINDOW', GUARDIAN: 'THREAT RADAR', MEDIC: 'VITALS', TACTICIAN: 'BOSS INTEL' };
+
 function renderGameShell() {
     const cls = S.me.profile.cls;
     mount(`
     <div class="sg" data-cls="${cls}" id="g">
+        <div class="skin" aria-hidden="true"></div>
         <div class="sg-main">
             <div class="sg-hud">
-                <div class="sg-who"><span class="n" id="h-name"></span><span class="c">${CLASSES[cls].name.toUpperCase()} · <span id="h-lives"></span></span></div>
+                <div class="sg-who">${crest(cls, { size: 42 })}<div><span class="n" id="h-name"></span><span class="c">${CLASSES[cls].name.toUpperCase()} · <span id="h-lives"></span> <span id="h-streak-chip"></span></span></div></div>
                 <div class="hudbar hp" id="h-hp"><i></i><div class="t"><span>HP</span><span id="h-hpt"></span></div></div>
                 <div class="hudbar ult" id="h-ult"><i></i><div class="t"><span>★ ULT</span><span id="h-ultt"></span></div></div>
-                <div class="streakbox" id="h-streak"><div class="k">🔥 0</div><div class="m">STREAK</div></div>
+                <div class="sig" id="sig"></div>
                 <button class="iconbtn" id="h-mute" title="Sound">${Audio.isMuted() ? '🔇' : '🔊'}</button>
             </div>
             <div class="sg-banners" id="banners"></div>
             <div class="sg-stage">
+                <canvas id="stu-boss"></canvas>
                 <div class="sg-bossline" id="bossline"></div>
+                <div class="intel" id="intel"><div class="intel-h">${crest(cls, { size: 22 })} ${INTEL_TITLES[cls]} <span class="intel-only">${CLASSES[cls].name.toUpperCase()}S ONLY</span></div><div class="intel-b" id="intel-b"></div></div>
                 <div class="sg-center" id="center"></div>
                 <div class="layer" id="dmg-layer"></div>
                 <div id="slam"></div>
@@ -225,6 +241,7 @@ function renderGameShell() {
             </div>
         </aside>
     </div>
+    <div class="edge" id="edge"></div>
     <div class="vignette" id="vignette"></div>
     <div id="achv"></div>
     <div class="fs-tip">⚡ Press the full-screen key (or F11) for the best view ⚡</div>`);
@@ -244,7 +261,35 @@ function renderGameShell() {
     S.q = null;
     S.lastKey = null;
     S.prevUlt = S.me.pub.ult;
+    S.bossR = null; S.bossId = null;
     drawControls();
+    if (!S.revealed) classReveal(cls);
+}
+
+function classReveal(cls) {
+    S.revealed = true;
+    const c = CLASSES[cls];
+    const el = document.createElement('div');
+    el.className = 'class-reveal';
+    el.dataset.cls = cls;
+    el.innerHTML = `<div class="cr-crest">${crest(cls, { size: 'min(34vh, 260px)', glow: true })}</div>
+        <div class="label">YOU ARE THE</div>
+        <div class="cr-name">${c.name.toUpperCase()}</div>
+        <div class="cr-tag"><i>${esc(c.tagline)}</i> · ${esc(CREST_NAMES[cls])}</div>
+        <div class="cr-job">${esc(ROLE_LINES[cls])}</div>
+        <div class="label" style="margin-top:14px">CLICK TO CONTINUE</div>`;
+    document.body.appendChild(el);
+    Audio.ensureCtx(); Audio.sfxBossIntro();
+    const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 400); };
+    el.onclick = close;
+    setTimeout(close, 4200);
+}
+
+function edge(color) {
+    const e = $('#edge');
+    if (!e) return;
+    e.style.setProperty('--ec', color);
+    e.classList.remove('on'); void e.offsetWidth; e.classList.add('on');
 }
 
 function inFight() {
@@ -258,13 +303,16 @@ function streakBonusPct(streak, cls) {
     const t = STREAK_BONUS.find(s => streak >= s.at);
     return Math.round((t ? t.bonus : 0) * (cls === 'WARRIOR' ? 2 : 1) * 100);
 }
+const playersPub = () => Object.values(S.room.players || {}).map(n => n.pub).filter(Boolean);
+const nameOf = id => esc(S.room.players?.[id]?.pub?.name || '?');
+
+// ---------------------------------------------------------------- per-update rendering
 
 function updateGame() {
     const pub = S.me.pub, c = CLASSES[pub.cls];
-    const now = hostNow();
     if (S.live.clock) S.clockOffset = S.live.clock - Date.now();
+    const now = hostNow();
 
-    // HUD
     $('#h-name').textContent = pub.name;
     $('#h-lives').innerHTML = `<span style="color:#ff4757">${'♥'.repeat(Math.max(0, pub.lives))}</span>`;
     const hp = $('#h-hp');
@@ -275,21 +323,22 @@ function updateGame() {
     ult.querySelector('i').style.width = pub.ult + '%';
     ult.classList.toggle('ready', pub.ult >= 100);
     $('#h-ultt').textContent = pub.ult >= 100 ? 'READY!' : pub.ult + '%';
-    if (pub.ult >= 100 && (S.prevUlt ?? 0) < 100 && pub.status === 'alive') { slam('ULTIMATE READY', { color: '#ffa502', sub: c.abilities.ult.name.toUpperCase() }); Audio.sfxAchievement(); }
+    if (pub.ult >= 100 && (S.prevUlt ?? 0) < 100 && pub.status === 'alive') { slam('ULTIMATE READY', { color: '#ffa502', sub: c.abilities.ult.name.toUpperCase() }); edge('#ffa502'); Audio.sfxAchievement(); }
     S.prevUlt = pub.ult;
     const streak = S.streak || 0;
-    const bonus = streakBonusPct(streak, pub.cls);
-    $('#h-streak').innerHTML = `<div class="k">🔥 ${streak}</div><div class="m">${bonus ? `+${bonus}% DMG` : 'STREAK'}</div>`;
-    $('#h-streak').classList.toggle('hot', bonus > 0);
+    $('#h-streak-chip').innerHTML = streak >= 2 && pub.cls !== 'WARRIOR' ? `<span class="gold">🔥${streak}</span>` : '';
     $('#vignette').classList.toggle('on', pub.status === 'alive' && pub.hp / pub.maxHp < 0.3 && inFight());
     $('#call-ult').disabled = pub.ult < 100;
 
-    // boss line
     const b = S.live.boss;
     $('#bossline').innerHTML = b && S.live.stage?.kind === 'boss'
         ? `<span style="color:${BOSSES[b.id].color}">${esc(b.name)}</span><div class="bar boss ${b.phase === 'DESPERATE' ? 'desperate' : b.phase === 'ENRAGED' ? 'enraged' : ''}" style="height:12px;border:0"><i style="width:${pct(b.hp, b.maxHp)}%"></i></div><span>${Math.ceil(pct(b.hp, b.maxHp))}%</span>`
         : '';
 
+    syncBoss();
+    $('#sig').innerHTML = signature(now);
+    $('#intel').hidden = !inFight();
+    if (inFight()) $('#intel-b').innerHTML = intel(now);
     $('#banners').innerHTML = banners(now);
     renderSquad(now);
 
@@ -298,10 +347,85 @@ function updateGame() {
     const callId = call && !call.done ? `${atk.id}-${atk.startedAt}` : null;
     if (callId !== S.lastCallId) {
         S.lastCallId = callId;
-        if (callId && call.cls === pub.cls) { Audio.sfxCountdown(); navigator.vibrate && navigator.vibrate([120, 60, 120]); }
+        if (callId && call.cls === pub.cls) { Audio.sfxCountdown(); edge(c.color); navigator.vibrate && navigator.vibrate([120, 60, 120]); }
         if (S.local === 'action') S.lastKey = null;
     }
     drawControls(true);
+}
+
+// The boss on your own screen: it flinches when YOU hit it.
+function syncBoss() {
+    const b = S.live.boss, st = S.live.stage;
+    const want = b && st?.kind === 'boss' && st.phase !== 'intro' ? b.id : null;
+    if (want !== S.bossId) {
+        if (S.bossR) { S.bossR.destroy(); S.bossR = null; }
+        S.bossId = want;
+        const cv = $('#stu-boss');
+        if (want && cv && window.BossRenderer) { S.bossR = window.BossRenderer.create(cv, want, { maxDpr: 1 }); S.bossR.intro(900); }
+    }
+    if (S.bossR && b) { S.bossR.setHealth(b.hp / b.maxHp); S.bossR.setPhase(b.enraged && b.phase === 'NORMAL' ? 'ENRAGED' : b.phase); }
+}
+
+// Class signature meter in the HUD
+function signature(now) {
+    const pub = S.me.pub, cls = pub.cls, streak = S.streak || 0;
+    if (cls === 'WARRIOR') {
+        const bonus = streakBonusPct(streak, cls);
+        return `<div class="sig-h">RAGE <b>${bonus ? `+${bonus}% DMG` : ''}</b></div><div class="rage">${Array.from({ length: 8 }, (_, i) => `<i class="${i < Math.min(8, streak) ? 'on' : ''}"></i>`).join('')}</div>`;
+    }
+    if (cls === 'GUARDIAN') {
+        const t = S.lastShield && S.room.players?.[S.lastShield]?.pub;
+        return `<div class="sig-h">PROTECTING</div><div class="sig-v">${t ? `${esc(t.name)} ${t.shield ? '<span style="color:#7d95ff">◆ UP</span>' : '<span class="muted">(used)</span>'}` : '<span class="muted">nobody yet</span>'}</div>`;
+    }
+    if (cls === 'MEDIC') {
+        const team = playersPub().filter(p => p.status !== 'out');
+        const worst = team.sort((a, b) => (a.status === 'down' ? -1 : a.hp / a.maxHp) - (b.status === 'down' ? -1 : b.hp / b.maxHp))[0];
+        const lvl = !worst ? 'calm' : worst.status === 'down' ? 'critical' : worst.hp / worst.maxHp < 0.35 ? 'alert' : 'calm';
+        return `<div class="ecg ${lvl}"><svg viewBox="0 0 120 30" preserveAspectRatio="none"><polyline points="0,15 30,15 38,6 46,26 54,2 62,22 68,15 120,15"/></svg></div>
+            <div class="sig-v">${worst ? (worst.status === 'down' ? `<b style="color:#ff4757">${esc(worst.name)} DOWN</b>` : `${esc(worst.name)} ${Math.round(pct(worst.hp, worst.maxHp))}%`) : ''}</div>`;
+    }
+    const b = S.live.boss;
+    const exposed = b && b.exposedUntil > now;
+    return `<div class="sig-h">EXPOSE</div><div class="sig-v">${exposed ? `<b style="color:#c9a2ff">ACTIVE ${Math.ceil((b.exposedUntil - now) / 1000)}s</b>` : pub.cd > 0 ? `ready in ${pub.cd}` : '<span style="color:#c9a2ff">READY</span>'}</div>`;
+}
+
+// Class-only intel: each class knows something the others don't, so they have to talk.
+function intel(now) {
+    const pub = S.me.pub, b = S.live.boss;
+    if (!b) return '';
+    const secs = t => Math.max(0, Math.ceil((t - now) / 1000));
+    const atk = b.attack;
+    if (pub.cls === 'TACTICIAN') {
+        const attacks = BOSSES[b.id].attacks;
+        const next = [...attacks].sort((x, y) => (b.cds[x.id] || 0) - (b.cds[y.id] || 0))[0];
+        const callWho = a => a.roleCall ? (a.roleCall === 'ALL' ? 'EVERY CLASS' : CLASSES[a.roleCall].name.toUpperCase() + 'S') : null;
+        let html = atk ? `<div class="iv danger">NOW: <b>${esc(atk.name)}</b> lands in ${secs(atk.landsAt)}s</div>` : '';
+        if (next && (!atk || next.id !== atk.id)) {
+            const w = callWho(next);
+            html += `<div class="iv">NEXT: <b>${esc(next.name)}</b> in ~${secs(Math.max(now, b.cds[next.id] || now)) + (atk ? secs(atk.landsAt) : 0)}s</div>${w ? `<div class="iv hint">It calls <b>${w}</b>. Warn them now!</div>` : ''}`;
+        }
+        if (b.stunUntil > now) html += `<div class="iv">Stunned ${secs(b.stunUntil)}s</div>`;
+        return html || '<div class="iv muted">Scanning…</div>';
+    }
+    if (pub.cls === 'GUARDIAN') {
+        const tg = b.telegraph;
+        let html = '';
+        if (atk && atk.kind !== 'aoe') html += `<div class="iv danger">HITTING NOW: ${atk.targets.map(id => `<b>${nameOf(id)}</b>`).join(', ')} · ${secs(atk.landsAt)}s</div>`;
+        if (tg) html += `<div class="iv warn">INCOMING: ${tg.targets.map(id => `<b>${nameOf(id)}</b>${S.room.players?.[id]?.pub?.shield ? ' ◆' : ''}`).join(', ')} in ~${secs(tg.at)}s</div><div class="iv hint">Shield them before it lands!</div>`;
+        if (atk && atk.kind === 'aoe') html += `<div class="iv danger">${esc(atk.name)} hits EVERYONE in ${secs(atk.landsAt)}s</div>`;
+        return html || '<div class="iv muted">No threats locked yet…</div>';
+    }
+    if (pub.cls === 'MEDIC') {
+        const team = playersPub().filter(p => p.status !== 'out')
+            .sort((a, x) => (x.status === 'down') - (a.status === 'down') || !!x.infected - !!a.infected || a.hp / a.maxHp - x.hp / x.maxHp).slice(0, 4);
+        return team.map(p => `<div class="iv ${p.status === 'down' ? 'danger' : p.hp / p.maxHp < 0.35 ? 'warn' : ''}">${p.status === 'down' ? '✚ REVIVE' : `${Math.round(pct(p.hp, p.maxHp))}%`} <b>${esc(p.name)}</b>${p.infected ? ` <span style="color:#7bed9f">☣ ${secs(p.infected)}s</span>` : ''}${p.status === 'alive' ? ` <span class="muted">${fmtNum(p.hp)}/${fmtNum(p.maxHp)}</span>` : ''}</div>`).join('');
+    }
+    // WARRIOR
+    if (b.exposedUntil > now) return `<div class="iv strike">STRIKE NOW! EXPOSED ${secs(b.exposedUntil)}s</div><div class="iv hint">${pub.ult >= 100 ? 'Your ultimate will SHATTER for 12,000+!' : 'Your Cleave crits for ×1.5!'}</div>`;
+    if (b.stunUntil > now) return `<div class="iv strike">BOSS STUNNED ${secs(b.stunUntil)}s · HIT IT!</div>`;
+    const tacts = playersPub().filter(p => p.cls === 'TACTICIAN' && p.status === 'alive');
+    const ready = tacts.filter(p => p.ult >= 100);
+    return `<div class="iv">Boss armored. Ask a Tactician to <b>Expose</b> it.</div>${ready.length ? `<div class="iv hint">${ready.map(p => `<b>${esc(p.name)}</b>`).join(', ')}'s System Breach is READY. Coordinate!</div>` : tacts.length ? `<div class="iv muted">Tacticians: ${tacts.map(p => esc(p.name)).join(', ')}</div>` : '<div class="iv muted">No Tacticians in the squad</div>'}`;
 }
 
 function banners(now) {
@@ -325,28 +449,28 @@ function banners(now) {
         } else if (!call) out.push(`<div class="banner danger">⚠ ${esc(atk.name)} INCOMING <span class="bt">${secs(atk.landsAt)}s</span></div>`);
     }
     if (pub.infected && pub.status === 'alive') out.push(`<div class="banner" style="--bc:#7bed9f">☣ INFECTED: it spreads soon. Ask a Medic to heal you! <span class="bt">${secs(pub.infected)}s</span></div>`);
-    if (b && b.exposedUntil > now) out.push(`<div class="banner" style="--bc:${CLASSES.TACTICIAN.color}">BOSS EXPOSED: everyone deals +25% <span class="bt">${secs(b.exposedUntil)}s</span></div>`);
     if (S.live.team?.dome > now) out.push(`<div class="banner" style="--bc:${CLASSES.GUARDIAN.color}">◆ IRON DOME: the squad is invulnerable <span class="bt">${secs(S.live.team.dome)}s</span></div>`);
-    if (b && b.stunUntil > now) out.push(`<div class="banner" style="--bc:${CLASSES.TACTICIAN.color}">BOSS STUNNED <span class="bt">${secs(b.stunUntil)}s</span></div>`);
-    return out.join('');
+    if (b && b.exposedUntil > now && pub.cls !== 'WARRIOR') out.push(`<div class="banner" style="--bc:${CLASSES.TACTICIAN.color}">BOSS EXPOSED: everyone deals +25% <span class="bt">${secs(b.exposedUntil)}s</span></div>`);
+    return out.slice(0, 3).join('');
 }
 
 function renderSquad(now) {
-    const list = Object.values(S.room.players || {}).map(n => n.pub && { ...n.pub, callout: n.pub.callout }).filter(Boolean);
+    const list = playersPub();
     const targeting = S.local === 'target' ? CLASSES[S.me.pub.cls].abilities[S.ability] : null;
     const atk = S.live.boss?.attack;
     const targeted = new Set(atk?.targets || []);
+    const soon = new Set(S.me.pub.cls === 'GUARDIAN' ? S.live.boss?.telegraph?.targets || [] : []);
     list.sort((a, b) => (b.id === S.pid) - (a.id === S.pid) || CLASS_IDS.indexOf(a.cls) - CLASS_IDS.indexOf(b.cls));
     $('#sq-count').textContent = `${list.filter(p => p.status === 'alive').length}/${list.length} UP`;
     $('#squad').innerHTML = list.map(p => {
         const valid = targeting && (p.status === 'alive' || (targeting.kind === 'heal' && p.status === 'down'));
         const co = p.callout && now - p.callout.at < 8000 ? p.callout.k : null;
         return `<button class="sq-card ${p.id === S.pid ? 'me' : ''} ${p.status !== 'alive' ? p.status : ''} ${targeting ? (valid ? 'targetable' : 'disabled') : ''}" data-cls="${p.cls}" data-id="${p.id}">
-            <div class="s"></div>
+            ${crest(p.cls, { size: 30 })}
             <div style="min-width:0">
                 <div class="nm"><span>${esc(p.name)}${p.id === S.pid ? ' (you)' : ''}</span>${co ? `<span class="callout-badge ${co}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[co]}</span>` : ''}</div>
                 <div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div>
-                <div class="tags">${p.status === 'down' ? '<b style="color:#ff4757">DOWN</b>' : p.status === 'out' ? '<span>👻 SPIRIT</span>' : ''}${targeted.has(p.id) && p.status === 'alive' ? '<b style="color:#ff4757">TARGETED</b>' : ''}${p.shield ? '<span style="color:#7d95ff">◆ SHIELD</span>' : ''}${p.infected ? '<b style="color:#7bed9f">☣</b>' : ''}${p.ult >= 100 ? '<span class="gold">★ ULT</span>' : ''}</div>
+                <div class="tags">${p.status === 'down' ? '<b style="color:#ff4757">DOWN</b>' : p.status === 'out' ? '<span>👻 SPIRIT</span>' : ''}${targeted.has(p.id) && p.status === 'alive' ? '<b style="color:#ff4757">TARGETED</b>' : soon.has(p.id) && p.status === 'alive' ? '<b style="color:#ffa502">INCOMING</b>' : ''}${p.shield ? '<span style="color:#7d95ff">◆ SHIELD</span>' : ''}${p.infected ? '<b style="color:#7bed9f">☣</b>' : ''}${p.ult >= 100 ? '<span class="gold">★ ULT</span>' : ''}</div>
             </div></button>`;
     }).join('');
     const syn = S.live.team?.syn || {};
@@ -410,7 +534,7 @@ function waveClear(box, center) {
             <div class="panel"><div class="label">DAMAGE</div><div class="v gold">${fmtNum(d('dmg'))}</div></div>
             <div class="panel"><div class="label">RIGHT</div><div class="v">${d('correct')}/${d('correct') + d('wrong')}</div></div>
             <div class="panel"><div class="label">HEALED · SHIELDS</div><div class="v">${fmtNum(d('heal'))} · ${d('shields')}</div></div>
-            <div class="panel"><div class="label">ROLE CALLS</div><div class="v">${d('roleCalls')}</div></div>
+            <div class="panel"><div class="label">SAVES · CALLS</div><div class="v">${d('saves')} · ${d('roleCalls')}</div></div>
         </div>
         ${newAchv.length ? `<div style="margin-top:12px">${newAchv.map(id => `<span class="chip gold" style="margin:3px">🏆 ${ACHIEVEMENTS[id]}</span>`).join('')}</div>` : ''}`}
     </div>`;
@@ -458,9 +582,9 @@ function pick(k, btn) {
         S.correctCount = (S.correctCount || 0) + 1;
         Audio.sfxCorrect();
         hitMarker(layer);
-        textPop(layer, 'CORRECT!', '#2ed573', 1.8);
+        textPop(layer, 'CORRECT!', '#2ed573', 2.6);
         const name = streakName(S.streak);
-        if (name) { slam(name, { sub: `${S.streak} IN A ROW · +${streakBonusPct(S.streak, pub.cls)}% DAMAGE` }); Audio.sfxStreak(); shake($('#g')); }
+        if (name) { slam(name, { sub: `${S.streak} IN A ROW · +${streakBonusPct(S.streak, pub.cls)}% DAMAGE` }); edge(S.streak >= 10 ? '#ff9d00' : '#ff4757'); Audio.sfxStreak(); shake($('#g')); }
         if (S.streak >= 5) unlock('streak5');
         if (S.streak >= 10) unlock('streak10');
         if (S.streak >= 20) unlock('streak20');
@@ -475,7 +599,7 @@ function pick(k, btn) {
         S.streak = 0;
         grid.children[order.indexOf(q.correct)].classList.add('right'); // learn from the miss
         S.myMissed[i] = (S.myMissed[i] || 0) + 1;
-        textPop(layer, 'WRONG', '#ff4757', 2);
+        textPop(layer, 'WRONG', '#ff4757', 2.4);
         Audio.sfxWrong(); shake($('#g'));
     }
     const alive = pub.status === 'alive';
@@ -484,7 +608,7 @@ function pick(k, btn) {
         S.local = correct && alive ? 'action' : 'question';
         S.lastKey = null;
         drawControls();
-    }, correct ? 500 : 1700);
+    }, correct ? 450 : 1700);
 }
 
 function actionButtons(c, pub, live = true) {
@@ -495,7 +619,7 @@ function actionButtons(c, pub, live = true) {
     const ultReady = pub.ult >= 100;
     const calledAll = callAll && callAll.cls === 'ALL' && !callAll.done && !callAll.who[c.id];
     return `
-        <button class="action" data-ab="basic"><span class="a-icon">${c.id[0]}</span><span><div class="a-name">${esc(a.basic.name.toUpperCase())}</div><div class="a-desc">${esc(a.basic.desc)}</div></span><span class="a-tag"></span></button>
+        <button class="action" data-ab="basic"><span class="a-icon">${crest(c.id, { size: 40 })}</span><span><div class="a-name">${esc(a.basic.name.toUpperCase())}</div><div class="a-desc">${esc(a.basic.desc)}</div></span><span class="a-tag"></span></button>
         <button class="action special ${call || calledAll ? 'called' : ''}" data-ab="special" ${spReady ? '' : 'disabled'}><span class="a-icon">✦</span><span><div class="a-name">${esc(a.special.name.toUpperCase())}</div><div class="a-desc">${esc(a.special.desc)}</div></span><span class="a-tag">${spReady ? (call ? 'CALLED!' : 'READY') : `${pub.cd} MORE`}</span></button>
         ${ultReady || !live ? `<button class="action ult" data-ab="ult" ${ultReady ? '' : 'disabled'}><span class="a-icon" style="background:#ffa502">★</span><span><div class="a-name">${esc(a.ult.name.toUpperCase())}</div><div class="a-desc">${esc(a.ult.desc)}</div></span><span class="a-tag">READY</span></button>`
             : `<div class="ult-charging">★ ${esc(a.ult.name.toUpperCase())} CHARGING… ${pub.ult}%</div>`}`;
@@ -507,10 +631,10 @@ function drawActions(box) {
         <div class="act-grid" id="g-act">${actionButtons(c, pub)}</div>`;
     $('#g-act').onclick = e => {
         const b = e.target.closest('.action');
-        if (!b || b.disabled) return;
+        if (!b || b.disabled || S.local !== 'action') return;
         const ab = b.dataset.ab;
         if (c.abilities[ab].target === 'ally') { S.ability = ab; S.local = 'target'; S.lastKey = null; drawControls(); renderSquad(hostNow()); return; }
-        doAct(ab, null);
+        doAct(ab, null, b);
     };
 }
 
@@ -519,11 +643,11 @@ function drawTargeting(box) {
     const narrow = matchMedia('(max-width: 820px)').matches;
     if (!narrow) {
         box.innerHTML = `<div class="pick-prompt">${esc(def.name.toUpperCase())}: CLICK A TEAMMATE IN YOUR SQUAD ▶</div>
-            <div class="muted" style="text-align:center">Down teammates and anyone TARGETED are listed first.${def.kind === 'heal' ? ' Healing a downed teammate revives them!' : ''}</div>
+            <div class="muted" style="text-align:center">${def.kind === 'heal' ? 'Healing a downed teammate revives them!' : 'Teammates marked TARGETED or INCOMING are about to get hit.'}</div>
             <button class="btn ghost" id="g-back" style="align-self:center">BACK</button>`;
     } else {
         // small screens have no sidebar: pick from a grid instead
-        const allies = Object.values(S.room.players || {}).map(n => n.pub).filter(p => p && (p.status === 'alive' || (def.kind === 'heal' && p.status === 'down')));
+        const allies = playersPub().filter(p => p.status === 'alive' || (def.kind === 'heal' && p.status === 'down'));
         box.innerHTML = `<div class="pick-prompt">${esc(def.name.toUpperCase())}: PICK A TEAMMATE</div>
             <div class="targets" id="g-tg">${allies.map(p => `<button class="target ${p.status === 'down' ? 'down' : ''}" data-cls="${p.cls}" data-id="${p.id}"><div class="t-name">${esc(p.name)}</div><div class="bar hp" style="height:6px;margin-top:6px"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div></button>`).join('')}</div>
             <button class="btn ghost" id="g-back">BACK</button>`;
@@ -532,14 +656,44 @@ function drawTargeting(box) {
     $('#g-back').onclick = () => { S.local = 'action'; S.lastKey = null; drawControls(); renderSquad(hostNow()); };
 }
 
-function doAct(ab, target) {
+// Same formula as the rules engine, so the number pops the instant you click
+// instead of waiting on the round trip to the projector.
+function predictDamage(abKey) {
+    const pub = S.me.pub, ab = CLASSES[pub.cls].abilities[abKey];
+    if (ab.kind !== 'damage') return null;
+    const b = S.live.boss, now = hostNow();
+    const exposed = b && b.exposedUntil > now;
+    let base = ab.power, crit = false, combo = null;
+    if (abKey === 'ult' && ab.comboPower && exposed) { base = ab.comboPower; combo = 'SHATTER'; }
+    else if (abKey === 'special' && exposed) { base *= 1.5; crit = true; }
+    const syn = { ...(S.live.team?.syn || {}), [pub.cls]: now };
+    const lvl = Math.max(1, Object.values(syn).filter(t => now - t <= 10000).length);
+    const amount = Math.round(base * (1 + streakBonusPct(S.streak || 0, pub.cls) / 100) * SYNERGY_MULT[lvl] * (exposed ? 1 + (b.exposeBonus || 0) : 1));
+    return { amount, crit, combo };
+}
+
+function doAct(ab, target, btn) {
     const c = CLASSES[S.me.pub.cls];
     sendIntent(S.code, S.pid, { t: 'x', ab, tg: target || null });
-    if (ab === 'ult') { Audio.sfxUltimate(); flash(c.color, 0.35); }
+    const guess = predictDamage(ab);
+    if (guess) {
+        const legendary = !!guess.combo || guess.amount >= 8000;
+        const t = damageNumber($('#dmg-layer'), guess.amount, { crit: guess.crit, legendary, label: guess.combo ? guess.combo + '!' : ab === 'ult' ? c.abilities.ult.name.toUpperCase() : '' });
+        S.pred = { at: Date.now(), combo: guess.combo };
+        if (S.bossR) S.bossR.hit(guess.amount, { crit: guess.crit || legendary || ab === 'ult' });
+        Audio.sfxHit(guess.amount);
+        if (t && (t.id === 'legendary' || t.id === 'epic')) edge(t.color);
+    }
+    if (ab === 'ult') { Audio.sfxUltimate(); flash(c.color, 0.35); edge(c.color); }
+    if (target === S.pid && c.abilities[ab].kind === 'shield') S.lastShield = target;
+    else if (c.abilities[ab].kind === 'shield') S.lastShield = target;
     S.local = 'feedback';
-    $('#controls').innerHTML = '';
+    // keep the move on screen for a beat instead of blanking the panel
+    const grid = $('#g-act');
+    if (grid && btn) { grid.classList.add('spent'); btn.classList.add('used'); }
+    else $('#controls').innerHTML = `<div class="pick-prompt">${esc(c.abilities[ab].name.toUpperCase())}!</div>`;
     renderSquad(hostNow());
-    setTimeout(() => { S.local = 'question'; S.lastKey = null; drawControls(); }, 650);
+    setTimeout(() => { S.local = 'question'; S.lastKey = null; drawControls(); }, 600);
 }
 
 // ---------------------------------------------------------------- effects from the host
@@ -562,55 +716,73 @@ function effect(ev) {
     switch (ev.type) {
         case 'hit': if (ev.pid === me) {
             const legendary = !!ev.combo || ev.amount >= 8000;
-            const t = damageNumber(layer, ev.amount, { crit: ev.crit, legendary, label: ev.combo ? ev.combo + '!' : ev.ability === 'ult' ? c.abilities.ult.name.toUpperCase() : '' });
-            Audio.sfxHit(ev.amount);
+            const predicted = S.pred && Date.now() - S.pred.at < 3000;
+            let t = null;
+            if (!predicted) { t = damageNumber(layer, ev.amount, { crit: ev.crit, legendary, label: ev.combo ? ev.combo + '!' : ev.ability === 'ult' ? c.abilities.ult.name.toUpperCase() : '' }); Audio.sfxHit(ev.amount); if (S.bossR) S.bossR.hit(ev.amount, { crit: ev.crit || legendary }); }
+            if (ev.combo && !(predicted && S.pred.combo)) damageNumber(layer, ev.amount, { legendary: true, label: ev.combo + '!' });
+            S.pred = null;
             unlock('first_blood');
             if (ev.crit) unlock('crit');
             if (ev.amount >= 5000) unlock('heavy');
-            if (ev.combo) { unlock('shatter'); slam(ev.combo + '!', { color: '#ff9d00', sub: fmtNum(ev.amount) + ' DAMAGE' }); }
-            if (t && t.id === 'legendary') unlock('legendary');
-        } break;
+            if (ev.combo) { unlock('shatter'); slam(ev.combo + '!', { color: '#ff9d00', sub: fmtNum(ev.amount) + ' DAMAGE' }); edge('#ff9d00'); }
+            if (legendary) unlock('legendary');
+        } else if (S.bossR) S.bossR.hit(ev.amount, { crit: ev.crit || !!ev.combo });
+            break;
         case 'ult': if (ev.pid === me) { slam(c.abilities.ult.name.toUpperCase() + '!', { color: c.color }); unlock('ult'); } break;
         case 'heal':
-            if (ev.pid === me && ev.target !== me) { textPop(layer, `+${fmtNum(ev.amount)} HEALED`, '#2ed573'); if (++S.counters.heals >= 3) unlock('medic'); }
-            if (ev.target === me) { textPop(layer, `+${fmtNum(ev.amount)} HP`, '#2ed573', 2.4); flash('#2ed573', 0.2); if (ev.pid !== me) toast(`${by(ev.pid)} healed you`); }
+            if (ev.pid === me && ev.target !== me) { textPop(layer, `+${fmtNum(ev.amount)} HEALED`, '#2ed573', 2.4); if (++S.counters.heals >= 3) unlock('medic'); }
+            if (ev.target === me) { textPop(layer, `+${fmtNum(ev.amount)} HP`, '#2ed573', 2.6); flash('#2ed573', 0.2); if (ev.pid !== me) toast(`${by(ev.pid)} healed you`); }
             break;
         case 'shield':
-            if (ev.pid === me) { textPop(layer, '◆ SHIELD UP', '#7d95ff'); if (++S.counters.shields >= 5) unlock('bodyguard'); }
-            if (ev.target === me && ev.pid !== me) { textPop(layer, '◆ SHIELDED', '#7d95ff', 2.4); toast(`${by(ev.pid)} shielded you`); }
+            if (ev.pid === me) { S.lastShield = ev.target; textPop(layer, '◆ SHIELD UP', '#7d95ff', 2.4); if (++S.counters.shields >= 5) unlock('bodyguard'); }
+            if (ev.target === me && ev.pid !== me) { textPop(layer, '◆ SHIELDED', '#7d95ff', 2.6); toast(`${by(ev.pid)} shielded you`); }
             break;
         case 'shieldBlock':
             if (ev.pid === me) { textPop(layer, 'BLOCKED!', '#7d95ff', 2.8); Audio.sfxShield(); if (ev.by) toast(`${by(ev.by)}'s shield saved you!`); }
             if (ev.by === me && ev.pid !== me) {
                 slam('CLUTCH SAVE!', { color: '#7d95ff', sub: `YOUR SHIELD BLOCKED ${fmtNum(ev.amount)} FOR ${by(ev.pid)}` });
-                Audio.sfxShield(); unlock('save');
+                edge('#4a6cff'); Audio.sfxShield(); unlock('save');
                 if (++S.counters.saves >= 3) unlock('save3');
             }
             break;
-        case 'playerHit': if (ev.pid === me) { textPop(layer, `−${fmtNum(ev.amount)}`, '#ff4757', 3); flash('#ff2a3d', 0.4); shake($('#g')); navigator.vibrate && navigator.vibrate(150); } break;
+        case 'playerHit': if (ev.pid === me) { textPop(layer, `−${fmtNum(ev.amount)}`, '#ff4757', 3); flash('#ff2a3d', 0.4); edge('#ff2a3d'); shake($('#g')); navigator.vibrate && navigator.vibrate(150); } break;
         case 'selfDamage': if (ev.pid === me) textPop(layer, `−${fmtNum(ev.amount)}`, '#ff6b81', 1.6); break;
         case 'revive':
-            if (ev.pid === me) { slam('BACK IN THE FIGHT!', { color: '#2ed573', sub: ev.by ? `REVIVED BY ${by(ev.by)}` : 'REBOOTED' }); flash('#2ed573', 0.4); unlock('comeback'); S.local = 'question'; S.q = null; S.lastKey = null; }
+            if (ev.pid === me) { slam('BACK IN THE FIGHT!', { color: '#2ed573', sub: ev.by ? `REVIVED BY ${by(ev.by)}` : 'REBOOTED' }); flash('#2ed573', 0.4); edge('#2ed573'); unlock('comeback'); S.local = 'question'; S.q = null; S.lastKey = null; }
             if (ev.by === me && ev.pid !== me) { textPop(layer, 'REVIVED!', '#2ed573', 2.8); if (++S.counters.revives >= 1) unlock('revive1'); if (S.counters.revives >= 3) unlock('revive3'); }
             break;
-        case 'down': if (ev.pid === me) { S.downThisBoss = true; S.streak = 0; slam("YOU'RE DOWN!", { color: '#ff4757', sub: 'ANSWER TO REBOOT, OR CALL A MEDIC' }); flash('#ff2a3d', 0.6); S.local = 'question'; S.q = null; S.lastKey = null; } break;
+        case 'down': if (ev.pid === me) { S.downThisBoss = true; S.streak = 0; slam("YOU'RE DOWN!", { color: '#ff4757', sub: 'ANSWER TO REBOOT, OR CALL A MEDIC' }); flash('#ff2a3d', 0.6); edge('#ff2a3d'); S.local = 'question'; S.q = null; S.lastKey = null; } break;
         case 'eliminated': if (ev.pid === me) { S.downThisBoss = true; slam('OUT OF LIVES', { color: '#9fd0ff', sub: 'YOUR ANSWERS NOW POWER THE TEAM RALLY' }); S.local = 'question'; S.lastKey = null; } break;
         case 'infected': if (ev.pid === me) toast('☣ You are infected! Ask a Medic for a heal'); break;
         case 'cured': if (ev.target === me) toast(`${by(ev.pid)} cured you`); break;
-        case 'expose': if (ev.pid === me) { textPop(layer, 'EXPOSED!', CLASSES.TACTICIAN.color, 2.6); if (++S.counters.exposes >= 3) unlock('weakpoint'); } break;
-        case 'interrupt': if (ev.pid === me) { slam('INTERRUPTED!', { color: CLASSES.TACTICIAN.color, sub: 'YOU STOPPED THE ATTACK' }); unlock('interrupt'); } break;
+        case 'expose': if (ev.pid === me) { textPop(layer, 'EXPOSED!', CLASSES.TACTICIAN.color, 2.6); if (++S.counters.exposes >= 3) unlock('weakpoint'); } else if (pub.cls === 'WARRIOR') { slam('BOSS EXPOSED!', { color: CLASSES.TACTICIAN.color, sub: pub.ult >= 100 ? 'ULTIMATE NOW = SHATTER!' : 'STRIKE NOW!' }); } break;
+        case 'interrupt': if (S.bossR) S.bossR.cancelWindUp(); if (ev.pid === me) { slam('INTERRUPTED!', { color: CLASSES.TACTICIAN.color, sub: 'YOU STOPPED THE ATTACK' }); unlock('interrupt'); } break;
         case 'roleCallProgress': if (ev.pid === me) { textPop(layer, 'CALL ANSWERED!', '#ffa502', 2.4); unlock('call'); } break;
         case 'roleCallSuccess':
-            if (Object.values(ev.call?.who || {}).includes(me)) { slam('ATTACK STOPPED!', { color: '#2ed573', sub: `${fmtNum(ev.reflect)} REFLECTED BACK` }); Audio.sfxPuzzleSolve(); unlock('saver'); }
+            if (S.bossR) S.bossR.cancelWindUp();
+            if (Object.values(ev.call?.who || {}).includes(me)) { slam('ATTACK STOPPED!', { color: '#2ed573', sub: `${fmtNum(ev.reflect)} REFLECTED BACK` }); edge('#2ed573'); Audio.sfxPuzzleSolve(); unlock('saver'); }
             else textPop(layer, 'ATTACK BLOCKED!', '#2ed573', 2);
             break;
+        case 'windup': if (S.bossR) S.bossR.windUp(Math.max(500, ev.landsAt - hostNow())); break;
+        case 'attack': if (S.bossR) S.bossR.release(); break;
+        case 'domeBlock': if (S.bossR) S.bossR.release(); break;
+        case 'bossDefeated': if (S.bossR) S.bossR.die(); break;
         case 'combo': if (ev.pid !== me) textPop(layer, `${ev.name}! (${by(ev.pid)})`, '#ff9d00', 2); break;
-        case 'synergy': if (ev.level === 4) { slam('FULL SYNERGY', { color: '#c45cff', sub: 'ALL FOUR CLASSES · ×1.5 DAMAGE' }); if (pub.status === 'alive') unlock('synergy'); } break;
+        case 'synergy': if (ev.level === 4) { slam('FULL SYNERGY', { color: '#c45cff', sub: 'ALL FOUR CLASSES · ×1.5 DAMAGE' }); edge('#c45cff'); if (pub.status === 'alive') unlock('synergy'); } break;
         case 'phase': slam(`BOSS ${ev.phase}!`, { color: ev.phase === 'DESPERATE' ? '#ff4757' : '#ffa502' }); break;
         case 'enrage': slam('TIME\'S UP!', { color: '#ff4757', sub: 'THE BOSS IS ENRAGED' }); break;
         case 'rally': slam('SPIRIT RALLY', { color: '#9fd0ff', sub: '+20% HP FOR EVERYONE' }); break;
         case 'wipe': slam('SQUAD WIPED', { color: '#ff4757' }); break;
-        case 'rejected': if (ev.pid === me) toast({ 'no fight': 'Too late, that fight is over!', 'target is down': 'They went down. Pick someone else', 'target is out': 'They are out of lives', 'regrouping': 'Regrouping, hold on!' }[ev.reason] || 'That move didn\'t go through'); break;
+        case 'hero': {
+            const t = heroText(ev, id => S.room.players?.[id]?.pub?.name || '?');
+            const color = heroColor(ev.kind);
+            const crests = (ev.pids || []).map(id => S.room.players?.[id]?.pub?.cls).filter(Boolean).map(k => crest(k, { size: 90, glow: true })).join('');
+            slam(`${crests ? `<div class="slam-crests">${crests}</div>` : ''}${esc(t.title)}`, { color, sub: esc(t.sub) });
+            edge(color); confetti(50);
+            if ((ev.pids || []).includes(me)) { unlock('hero'); Audio.sfxAchievement(); }
+            break;
+        }
+        case 'rejected': if (ev.pid === me) { S.pred = null; toast({ 'no fight': 'Too late, that fight is over!', 'target is down': 'They went down. Pick someone else', 'target is out': 'They are out of lives', 'regrouping': 'Regrouping, hold on!' }[ev.reason] || 'That move didn\'t go through'); } break;
     }
 }
 
