@@ -40,3 +40,4 @@ What was really going on:
 2. More team synergies and combos
 3. Leaderboards
 4. Loot drops, or a class vote on an upgrade, skill-tree perk or power-up after each wave
+5. More boss mechanics
