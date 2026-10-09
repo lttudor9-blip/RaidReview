@@ -8,7 +8,7 @@ import { BOSSES, DIFFICULTY } from '../content/raid.js';
 import { questionDeck, shuffled } from '../content/questions.js';
 import { playerIdFor, joinRoom, chooseClass, sendIntent, listenRoom, lookupRoom } from '../net/room.js';
 import { AudioEngine as Audio } from '../audio.js';
-import { mount, esc, $, toast, flash, shake, fmtNum, pct } from '../ui.js';
+import { mount, esc, $, toast, flash, shake, fmtNum, pct, setHTML, toggleFullscreen } from '../ui.js';
 import { damageNumber, textPop, hitMarker, slam, streakName, unlock, unlockedList, ACHIEVEMENTS, achievementDesc, confetti } from './juice.js';
 import { crest, CREST_NAMES } from '../content/crests.js';
 import { abilityIcon, ABILITY_STAT, ULT_CALL } from '../content/abilityIcons.js';
@@ -25,6 +25,13 @@ const S = {
 export async function startStudent({ name, room }) {
     window.__rrStudent = S; // handy for debugging from the console
     Audio.init();
+    // full screen: a button on every screen before the game (the game has one in its top bar)
+    const fs = document.createElement('button');
+    fs.className = 'fs-pill'; fs.type = 'button'; fs.textContent = '⛶ FULL SCREEN';
+    fs.onclick = toggleFullscreen;
+    document.body.appendChild(fs);
+    const fsSync = () => { const on = !!(document.fullscreenElement || document.webkitFullscreenElement); fs.textContent = on ? '✕ EXIT FULL SCREEN' : '⛶ FULL SCREEN'; const b = document.getElementById('h-fs'); if (b) b.textContent = on ? '✕' : '⛶'; };
+    document.addEventListener('fullscreenchange', fsSync); document.addEventListener('webkitfullscreenchange', fsSync);
     if (!name || !room) return renderJoin(name, room);
     return join(name.trim().slice(0, 16), String(room).trim());
 }
@@ -93,6 +100,7 @@ function onRoom(room) {
 function show(screen) {
     if (S.screen !== screen) {
         S.screen = screen;
+        document.body.dataset.screen = screen;
         ({ kicked: renderKicked, classes: renderClasses, tutorial: renderTutorial, waiting: renderWaiting, game: renderGameShell, end: renderEnd })[screen]();
     } else if (screen === 'classes') updateClassCounts();
     else if (screen === 'waiting') updateWaiting();
@@ -122,7 +130,7 @@ function renderClasses() {
         <div class="hs-head">
             <div class="label">ASSEMBLE YOUR SQUAD</div>
             <div class="hs-title">CHOOSE YOUR CLASS</div>
-            <div class="muted">A squad with all four classes hits ×1.35 harder. Pick what your team needs! Pick what your team needs!</div>
+            <div class="muted">A squad with all four classes hits ×1.35 harder. Pick what your team needs!</div>
         </div>
         <div class="hs-grid" id="hs-grid">${CLASS_IDS.map(id => {
             const c = CLASSES[id], a = c.abilities, st = CLASS_STATS[id];
@@ -187,7 +195,7 @@ function updateClassCounts() {
         const names = counts[c];
         // with call signs on, classmates' real names never show on anyone's screen
         const list = S.room?.meta?.callsigns ? '' : `: ${names.slice(0, 3).map(esc).join(', ')}${names.length > 3 ? '…' : ''}`;
-        if (el) el.innerHTML = names.length ? `<b>${names.length}</b> in the squad${list}` : 'Nobody yet';
+        if (el) setHTML(el, names.length ? `<b>${names.length}</b> in the squad${list}` : 'Nobody yet');
         const need = document.querySelector(`[data-need="${c}"]`);
         if (need) need.textContent = names.length ? '' : 'NEEDED!';
     }
@@ -276,6 +284,7 @@ function renderGameShell() {
                 <div class="hudbar hp" id="h-hp"><i></i><div class="t"><span>HP</span><span id="h-hpt"></span></div></div>
                 <div class="hudbar ult" id="h-ult"><i></i><div class="t"><span>★ ULT</span><span id="h-ultt"></span></div></div>
                 <div class="sig" id="sig"></div>
+                <button class="iconbtn" id="h-fs" title="Full screen">${document.fullscreenElement ? '✕' : '⛶'}</button>
                 <button class="iconbtn" id="h-mute" title="Sound">${Audio.isMuted() ? '🔇' : '🔊'}</button>
             </div>
             <div class="sg-banners" id="banners"></div>
@@ -305,7 +314,8 @@ function renderGameShell() {
     <div class="edge" id="edge"></div>
     <div class="vignette" id="vignette"></div>
     <div id="achv"></div>
-    <div class="fs-tip">⚡ Press the full-screen key (or F11) for the best view ⚡</div>`);
+`);
+    $('#h-fs').onclick = toggleFullscreen;
     $('#h-mute').onclick = () => { const m = Audio.toggleMute(); $('#h-mute').textContent = m ? '🔇' : '🔊'; };
     document.querySelector('.sq-calls').onclick = e => {
         const k = e.target.dataset?.call;
@@ -313,6 +323,11 @@ function renderGameShell() {
         S.lastCallout = hostNow();
         sendIntent(S.code, S.pid, { t: 'c', k });
         toast('Callout sent to your squad');
+    };
+    // pick a teammate on press (not click): one tap, even if the list refreshes mid-tap
+    $('#squad').onpointerdown = e => {
+        const card = e.target.closest('.sq-card.targetable');
+        if (card && S.local === 'target') { e.preventDefault(); doAct(S.ability, card.dataset.id); }
     };
     $('#squad').onclick = e => {
         const card = e.target.closest('.sq-card.targetable');
@@ -371,11 +386,11 @@ const nameOf = id => esc(S.room.players?.[id]?.pub?.name || '?');
 
 function updateGame() {
     const pub = S.me.pub, c = CLASSES[pub.cls];
-    if (S.live.clock) S.clockOffset = S.live.clock - Date.now();
+    if (S.live.clock && S.live.clock !== S.clockSeen) { S.clockSeen = S.live.clock; S.clockOffset = S.live.clock - Date.now(); }
     const now = hostNow();
 
     $('#h-name').textContent = pub.name;
-    $('#h-lives').innerHTML = `<span style="color:#ff4757">${'♥'.repeat(Math.max(0, pub.lives))}</span>`;
+    setHTML($('#h-lives'), `<span style="color:#ff4757">${'♥'.repeat(Math.max(0, pub.lives))}</span>`);
     const hp = $('#h-hp');
     hp.querySelector('i').style.width = pct(pub.hp, pub.maxHp) + '%';
     hp.classList.toggle('low', pub.hp / pub.maxHp < 0.3);
@@ -387,20 +402,20 @@ function updateGame() {
     if (pub.ult >= 100 && (S.prevUlt ?? 0) < 100 && pub.status === 'alive') { slam('ULTIMATE READY', { color: '#ffa502', sub: c.abilities.ult.name.toUpperCase() }); edge('#ffa502'); Audio.sfxAchievement(); }
     S.prevUlt = pub.ult;
     const streak = S.streak || 0;
-    $('#h-streak-chip').innerHTML = streak >= 2 && pub.cls !== 'WARRIOR' ? `<span class="gold">🔥${streak}</span>` : '';
+    setHTML($('#h-streak-chip'), streak >= 2 && pub.cls !== 'WARRIOR' ? `<span class="gold">🔥${streak}</span>` : '');
     $('#vignette').classList.toggle('on', pub.status === 'alive' && pub.hp / pub.maxHp < 0.3 && inFight());
     $('#call-ult').disabled = pub.ult < 100;
 
     const b = S.live.boss;
-    $('#bossline').innerHTML = b && S.live.stage?.kind === 'boss'
+    setHTML($('#bossline'), b && S.live.stage?.kind === 'boss'
         ? `<span style="color:${BOSSES[b.id].color}">${esc(b.name)}</span><div class="bar boss ${b.phase === 'DESPERATE' ? 'desperate' : b.phase === 'ENRAGED' ? 'enraged' : ''}" style="height:12px;border:0"><i style="width:${pct(b.hp, b.maxHp)}%"></i></div><span>${Math.ceil(pct(b.hp, b.maxHp))}%</span>`
-        : '';
+        : '');
 
     syncBoss();
-    $('#sig').innerHTML = signature(now);
+    setHTML($('#sig'), signature(now));
     $('#intel').hidden = !inFight();
-    if (inFight()) $('#intel-b').innerHTML = intel(now);
-    $('#banners').innerHTML = banners(now);
+    if (inFight()) setHTML($('#intel-b'), intel(now));
+    setHTML($('#banners'), banners(now));
     if (S.live.stage?.kind === 'puzzle') puzzleTick(S.live, now);
     renderSquad(now);
 
@@ -501,7 +516,7 @@ function banners(now) {
     } else if (pub.status === 'out') {
         out.push(`<div class="banner" style="--bc:#9fd0ff">👻 SPIRIT MODE: your right answers power the team rally <span class="bt">${S.live.team?.rally || 0}%</span></div>`);
     }
-    const ls = b?.lastStand;
+    const ls = b?.lastStand && { ...b.lastStand, who: b.lastStand.who || {}, need: b.lastStand.need || [] }; // Firebase drops the empty `who`
     if (ls && !ls.done && inFight() && pub.status === 'alive') {
         out.push(ls.who[pub.cls]
             ? `<div class="banner big" style="--bc:#2ed573">✔ ${clsName}S FIRED! Hold on: ${ls.need.filter(c => !ls.who[c]).map(c => CLASSES[c].name.toUpperCase() + 'S').join(', ') || 'everyone'} still needed <span class="bt">${secs(ls.endsAt)}s</span></div>`
@@ -510,7 +525,7 @@ function banners(now) {
     if (b && b.stunUntil > now && !ls && inFight() && !atk) out.push(`<div class="banner big" style="--bc:#ffb020">BOSS STAGGERED: EVERY CLASS HIT IT NOW! <span class="bt">${secs(b.stunUntil)}s</span></div>`);
     if (atk && inFight()) {
         if (call && !call.done && call.cls === pub.cls) out.push(`<div class="banner big" style="--bc:${CLASSES[pub.cls].color}">BOSS CALLS ${clsName}S! Answer, then hit ${esc(CLASSES[pub.cls].abilities.special.name.toUpperCase())} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
-        else if (call && !call.done && call.cls === 'ALL' && !call.who[pub.cls]) out.push(`<div class="banner big" style="--bc:#ffa502">EVERY CLASS NEEDED: ${clsName}S HAVEN'T ACTED YET! <span class="bt">${secs(atk.landsAt)}s</span></div>`);
+        else if (call && !call.done && call.cls === 'ALL' && !(call.who || {})[pub.cls]) out.push(`<div class="banner big" style="--bc:#ffa502">EVERY CLASS NEEDED: ${clsName}S HAVEN'T ACTED YET! <span class="bt">${secs(atk.landsAt)}s</span></div>`);
         else if (call && !call.done && call.cls === 'ANY') out.push(`<div class="banner big" style="--bc:#ffa502">EVERYONE: ACT NOW TO STOP ${esc(atk.name)} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
         else if (call && call.done) out.push(`<div class="banner" style="--bc:#2ed573">✔ ROLE CALL ANSWERED: ${esc(atk.name)} WILL BE BLOCKED</div>`);
         if ((atk.targets || []).includes(S.pid) && pub.status === 'alive' && !(call && call.done)) {
@@ -531,7 +546,7 @@ function renderSquad(now) {
     const soon = new Set(S.me.pub.cls === 'GUARDIAN' ? S.live.boss?.telegraph?.targets || [] : []);
     list.sort((a, b) => (b.id === S.pid) - (a.id === S.pid) || CLASS_IDS.indexOf(a.cls) - CLASS_IDS.indexOf(b.cls));
     $('#sq-count').textContent = `${list.filter(p => p.status === 'alive').length}/${list.length} UP`;
-    $('#squad').innerHTML = list.map(p => {
+    setHTML($('#squad'), list.map(p => {
         const valid = targeting && (p.status === 'alive' || (targeting.kind === 'heal' && p.status === 'down'));
         const co = p.callout && now - p.callout.at < 8000 ? p.callout.k : null;
         return `<button class="sq-card ${p.id === S.pid ? 'me' : ''} ${p.status !== 'alive' ? p.status : ''} ${targeting ? (valid ? 'targetable' : 'disabled') : ''}" data-cls="${p.cls}" data-id="${p.id}">
@@ -541,7 +556,7 @@ function renderSquad(now) {
                 <div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div>
                 <div class="tags">${p.status === 'down' ? '<b style="color:#ff4757">DOWN</b>' : p.status === 'out' ? '<span>👻 SPIRIT</span>' : ''}${targeted.has(p.id) && p.status === 'alive' ? '<b style="color:#ff4757">TARGETED</b>' : soon.has(p.id) && p.status === 'alive' ? '<b style="color:#ffa502">INCOMING</b>' : ''}${p.shield ? '<span style="color:#7d95ff">◆ SHIELD</span>' : ''}${p.infected ? '<b style="color:#7bed9f">☣</b>' : ''}${p.ult >= 100 ? '<span class="gold">★ ULT</span>' : ''}</div>
             </div></button>`;
-    }).join('');
+    }).join(''));
     const syn = S.live.team?.syn || {};
     let n = 0;
     document.querySelectorAll('#syn .pip').forEach(p => { const on = now - (syn[p.dataset.cls] || -1e12) <= 10000; if (on) n++; p.classList.toggle('on', on); });
@@ -691,7 +706,7 @@ function actionButtons(c, pub, live = true) {
     const a = c.abilities;
     const spReady = pub.cd <= 0 || !!call;
     const ultReady = pub.ult >= 100;
-    const calledAll = callAll && callAll.cls === 'ALL' && !callAll.done && !callAll.who[c.id];
+    const calledAll = callAll && callAll.cls === 'ALL' && !callAll.done && !(callAll.who || {})[c.id];
     const card = (key, extra, disabled, overlay) => {
         const ab = a[key];
         return `<button class="act act-${key} ${extra}" data-ab="${key}" ${disabled ? 'disabled' : ''}>

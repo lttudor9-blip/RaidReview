@@ -13,4 +13,14 @@ Feedback from real play sessions. Log first, fix later.
 | 5 | Medic healing | Picking a teammate to heal takes two clicks; it should take one | The squad list on the student screen (`renderSquad`) is probably rebuilt on every game update. If it redraws between press and release, the first click is lost and the student has to click again. Same root cause as #3. |
 | 6 | Vault puzzle | **Student screens go blank** (puzzle can't be played) | **Confirmed:** empty slots are stored as `null`, and real Firebase drops nulls, so students receive `value: undefined`. `next/js/student/puzzle.js` checks `x.value !== null` and then crashes on `SYMBOLS[undefined].glyph`. Fix: check `x.value == null`. Also make `tests/e2e/mock-db.js` drop nested nulls the way Firebase does, so tests catch this class of bug. Workaround for now: use Boss Rush. |
 
-Status: documented only. To fix after the session.
+Status: **all 6 fixed.**
+
+What was really going on:
+- **Flashing (#1–#3):** the projector re-sent its clock value 4 times a second. Every update made each screen rebuild its lists, including fresh copies of every crest, each with a live glow filter. Changes:
+  - The clock is now sent every few seconds.
+  - Lists only redraw when something in them actually changed (`setHTML` in `ui.js`).
+  - The crest glow is now a cheap painted halo instead of a filter.
+  - The badges that pulsed nonstop are now still.
+- **Full screen (#4):** there's a full-screen button on every student screen and in the projector controls.
+- **Heal clicks (#5):** picking a teammate now registers on press, so it takes one tap even if the list refreshes mid-tap.
+- **Vault blank (#6):** fixed. The same Firebase "drops empty values" behavior would also have crashed student screens in the final boss's Last Stand and in "every class" role calls. Those are fixed too. The test database now drops empty values the way Firebase does, so this kind of bug is caught before release.

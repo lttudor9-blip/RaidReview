@@ -90,5 +90,5 @@ export function crest(cls, { size = 64, glow = false, className = '' } = {}) {
     const id = `cr${++uid}`;
     const color = { WARRIOR: '#ff4757', GUARDIAN: '#4a6cff', MEDIC: '#2ed573', TACTICIAN: '#a55eea' }[cls];
     const sz = typeof size === 'number' ? size + 'px' : size;
-    return `<svg class="crest ${className}" viewBox="0 0 200 200" width="${sz}" height="${sz}" aria-label="${cls} crest" style="${glow ? `filter:drop-shadow(0 0 12px ${color}) drop-shadow(0 0 28px ${color}80);` : ''}overflow:visible">${draw(id)}</svg>`;
+    return `<svg class="crest ${className}" viewBox="0 0 200 200" width="${sz}" height="${sz}" aria-label="${cls} crest" style="${glow ? `background:radial-gradient(closest-side, ${color}66, ${color}22 60%, transparent 100%);border-radius:50%;` : ''}overflow:visible">${draw(id)}</svg>`;
 }

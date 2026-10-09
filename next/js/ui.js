@@ -6,6 +6,25 @@ export function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Update an element only when its content actually changed. Screens refresh
+// several times a second; rebuilding unchanged HTML restarts animations (flashing)
+// and can swap a button out from under a click. Crest SVGs get fresh gradient ids
+// each render, so those are ignored when comparing.
+export function setHTML(el, html) {
+    if (!el) return;
+    const key = html.replace(/\bcr\d+/g, '');
+    if (el.__rrKey === key) return;
+    el.__rrKey = key;
+    el.innerHTML = html;
+}
+
+// Full screen on and off (Chromebooks, projectors).
+export function toggleFullscreen() {
+    const d = document;
+    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else { const el = d.documentElement; (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el); }
+}
+
 // Render a screen: replaces #app content with the given HTML string.
 export function mount(html) {
     const app = document.getElementById('app');

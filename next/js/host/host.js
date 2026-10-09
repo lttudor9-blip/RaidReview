@@ -9,7 +9,7 @@ import { CLASSES, CLASS_IDS, SYNERGY_MULT } from '../content/classes.js';
 import { BOSSES, FORMATS, DIFFICULTY } from '../content/raid.js';
 import { createRoom, listenRoom, updateRoom } from '../net/room.js';
 import { AudioEngine as Audio } from '../audio.js';
-import { mount, esc, $, floater, flash, shake, fmtNum, fmtClock, pct, toast } from '../ui.js';
+import { mount, esc, $, floater, flash, shake, fmtNum, fmtClock, pct, toast, setHTML, toggleFullscreen } from '../ui.js';
 import { renderResults } from './results.js';
 import { crest } from '../content/crests.js';
 import { heroText, heroColor } from '../content/heroes.js';
@@ -158,11 +158,12 @@ function flush(H) {
     const out = H.pending;
     H.pending = {};
     const e = H.engine;
+    if (!H.clockAt || Date.now() - H.clockAt > 4000) H.clockAt = Date.now();
     const live = {
         status: e.status, raidLives: e.raidLives, regroupUntil: e.regroupUntil,
         stage: H.stage, stageCount: H.stages ? H.stages.length : 0, stageIdx: H.stageIdx,
         boss: e.boss, team: e.team, paused: H.paused, fx: H.fx, puzzle: e.puzzle || null, mods: e.nextMods || null,
-        clock: Date.now() // students sync their countdowns to the host's clock
+        clock: H.clockAt // students sync their countdowns to the host's clock (sent every few seconds, not every tick)
     };
     for (const [k, v] of Object.entries(live)) setIfChanged(H, out, `live/${k}`, v);
     for (const p of Object.values(e.players)) {
@@ -518,13 +519,13 @@ function renderLobbySquad(H) {
     if (!el) return;
     const ps = Object.values(H.engine.players);
     const waiting = Object.values(H.room?.players || {}).filter(n => n.profile && !n.profile.cls).length;
-    el.innerHTML = CLASS_IDS.map(c => {
+    setHTML(el, CLASS_IDS.map(c => {
         const list = ps.filter(p => p.cls === c);
         return `<div class="squad-col" data-cls="${c}"><div style="text-align:center;margin-bottom:6px">${crest(c, { size: 72, glow: list.length > 0 })}</div><h4><span>${CLASSES[c].name.toUpperCase()}S</span><span>${list.length}</span></h4>
             <div class="names">${list.map(p => `<span data-pid="${p.id}" title="Click to remove" style="cursor:pointer">${esc(p.name)}</span>`).join('')}</div></div>`;
-    }).join('');
+    }).join(''));
     const classes = new Set(ps.map(p => p.cls)).size;
-    $('#ready-count').innerHTML = `<b>${ps.length}</b> ready${waiting ? ` · ${waiting} choosing a class` : ''}${ps.length && classes < 4 ? ` · <span class="gold">only ${classes} of 4 classes — synergy needs all four</span>` : ''}`;
+    setHTML($('#ready-count'), `<b>${ps.length}</b> ready${waiting ? ` · ${waiting} choosing a class` : ''}${ps.length && classes < 4 ? ` · <span class="gold">only ${classes} of 4 classes — synergy needs all four</span>` : ''}`);
 }
 
 // ================================================================= fight screen
@@ -590,9 +591,11 @@ function renderControls(H) {
         <div class="ctrl-row">
             <button class="btn" id="c-pause">${H.paused ? 'RESUME' : 'PAUSE'}</button>
             <button class="btn" id="c-sound">${Audio.isMuted() ? 'SOUND OFF' : 'SOUND ON'}</button>
+            <button class="btn" id="c-fs" title="Full screen">⛶</button>
         </div>`;
     $('#c-pause').onclick = () => { togglePause(H); renderControls(H); };
     $('#c-sound').onclick = () => { Audio.toggleMute(); renderControls(H); };
+    $('#c-fs').onclick = toggleFullscreen;
     el.onclick = e => {
         const c = e.target.closest('[data-chaos]'), r = e.target.closest('[data-reward]');
         if (!c && !r) return;
@@ -671,13 +674,13 @@ function renderFight(H, now) {
     const targets = new Set(atk ? atk.targets : []);
     const ps = Object.values(e.players);
     ui.alive.textContent = `${ps.filter(p => p.status === 'alive').length}/${ps.length} UP`;
-    ui.lives.innerHTML = `RAID LIVES <span style="color:#ff4757;font-size:1.3rem">${'♥'.repeat(Math.max(0, e.raidLives))}</span>${e.team.dome > now ? ' · <span style="color:#4a6cff">DOME</span>' : ''}`;
-    ui.vitals.innerHTML = ps.sort((a, b2) => CLASS_IDS.indexOf(a.cls) - CLASS_IDS.indexOf(b2.cls)).map(p => `
+    setHTML(ui.lives, `RAID LIVES <span style="color:#ff4757;font-size:1.3rem">${'♥'.repeat(Math.max(0, e.raidLives))}</span>${e.team.dome > now ? ' · <span style="color:#4a6cff">DOME</span>' : ''}`);
+    setHTML(ui.vitals, ps.sort((a, b2) => CLASS_IDS.indexOf(a.cls) - CLASS_IDS.indexOf(b2.cls)).map(p => `
         <div class="vital ${p.status !== 'alive' ? p.status : ''} ${targets.has(p.id) && p.status === 'alive' ? 'targeted' : ''} ${p.infected && p.status === 'alive' ? 'infected' : ''}" data-cls="${p.cls}">
             ${crest(p.cls, { size: 30 })}
             <div style="min-width:0"><div class="v-name">${esc(p.name)}</div><div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div></div>
             <div class="v-tags">${H.callouts[p.id] && now - H.callouts[p.id].at < 8000 ? `<span class="callout-badge ${H.callouts[p.id].k}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[H.callouts[p.id].k]}</span>` : ''}${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
-        </div>`).join('');
+        </div>`).join(''));
 }
 
 // ================================================================= raid puzzles

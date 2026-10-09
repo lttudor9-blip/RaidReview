@@ -3,6 +3,18 @@ const chan = new BroadcastChannel('mockfb');
 let tree = {};
 const listeners = new Set();
 const clone = v => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
+// Real Firebase never stores null or empty objects/arrays: they simply vanish.
+// Arrays come back as arrays; nulls inside them become missing entries.
+function prune(v) {
+    if (v === null || v === undefined) return undefined;
+    if (Array.isArray(v)) { const a = v.map(prune); return a.some(x => x !== undefined) ? a.map(x => (x === undefined ? null : x)) : undefined; }
+    if (typeof v === 'object') {
+        const o = {};
+        for (const [k, x] of Object.entries(v)) { const p = prune(x); if (p !== undefined) o[k] = p; }
+        return Object.keys(o).length ? o : undefined;
+    }
+    return v;
+}
 const parts = p => p.split('/').filter(Boolean);
 
 function getAt(path) {
@@ -16,7 +28,8 @@ function setAt(path, val) {
     let n = tree;
     for (const k of ks.slice(0, -1)) { if (n[k] == null || typeof n[k] !== 'object') n[k] = {}; n = n[k]; }
     const last = ks[ks.length - 1];
-    if (val === null || val === undefined) delete n[last]; else n[last] = clone(val);
+    const v = prune(clone(val));
+    if (v === undefined) delete n[last]; else n[last] = v;
 }
 function notify() {
     for (const l of [...listeners]) {

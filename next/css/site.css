@@ -53,23 +53,22 @@ a.btn { cursor: pointer; }
 .squad-art { position: relative; width: min(100%, 520px); aspect-ratio: 1; }
 .sa-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .sa-lines line { stroke: var(--brand); stroke-width: 0.7; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.sa-spokes line { stroke-width: 3; stroke-dasharray: 6 10; animation: saFlow 1.4s linear infinite; filter: drop-shadow(0 0 6px var(--brand)); opacity: 0.85; }
+.sa-spokes line { stroke-width: 3; stroke-dasharray: 6 10; animation: saFlow 1.4s linear infinite; opacity: 0.85; }
 .sa-ring line { stroke: var(--brand-2); stroke-width: 2; opacity: 0.5; }
 @keyframes saFlow { to { stroke-dashoffset: -32; } }
 .sa-orbit { position: absolute; inset: 26%; border-radius: 50%; border: 2px dashed rgba(124, 92, 255, 0.55); animation: spin 24s linear infinite; }
 .sa-orbit.two { inset: 33%; border-style: solid; border-color: rgba(255, 255, 255, 0.08); animation-duration: 40s; animation-direction: reverse; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .sa-core { position: absolute; left: 50%; top: 50%; width: 30%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: radial-gradient(circle, #3a2a08, #120d02 70%); border: 3px solid #ffa502; box-shadow: 0 0 40px rgba(255, 165, 2, 0.45), inset 0 0 30px rgba(255, 165, 2, 0.25); animation: corePulse 2.4s ease-in-out infinite; }
-@keyframes corePulse { 50% { box-shadow: 0 0 80px rgba(255, 165, 2, 0.7), inset 0 0 40px rgba(255, 165, 2, 0.4); } }
+    background: radial-gradient(circle, #3a2a08, #120d02 70%); border: 3px solid #ffa502; box-shadow: 0 0 50px rgba(255, 165, 2, 0.5), inset 0 0 30px rgba(255, 165, 2, 0.25); }
 .sa-mult { font-family: var(--display); font-weight: 900; font-size: clamp(1.4rem, 3vw, 2.2rem); color: #ffd36b; text-shadow: 0 0 18px rgba(255, 165, 2, 0.8); }
 .sa-label { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; color: var(--ink-2); }
-.sa-node { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; text-align: center; animation: crestBob 3.2s ease-in-out infinite; }
-.sa-node[data-cls="GUARDIAN"] { animation-delay: 0.5s; } .sa-node[data-cls="MEDIC"] { animation-delay: 1s; } .sa-node[data-cls="TACTICIAN"] { animation-delay: 1.5s; }
+.sa-node { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.sa-node svg { animation: crestFloat 4s ease-in-out infinite; will-change: transform; }
 .sa-node svg { width: clamp(64px, 9vw, 96px); height: auto; }
 .sa-name { font-family: var(--display); font-weight: 900; font-size: 0.85rem; letter-spacing: 0.1em; color: #fff; margin-top: 2px; }
 .sa-role { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.18em; color: var(--ink-3); }
-@keyframes crestBob { 50% { margin-top: -8px; } }
+@keyframes crestFloat { 50% { transform: translateY(-6px); } }
 
 .l-facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 28px; padding: 16px 24px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.02);
     font-family: var(--display); font-weight: 700; font-size: 0.75rem; letter-spacing: 0.1em; color: var(--ink-2); }

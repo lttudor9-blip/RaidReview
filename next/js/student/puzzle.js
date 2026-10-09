@@ -57,6 +57,7 @@ export function drawPuzzle(box, center, { live, cls, now, send, local }) {
         <span class="spz-strikes">${Array.from({ length: MAX_STRIKES }, (_, i) => `<i class="${i < pz.strikes ? 'on' : ''}"></i>`).join('')}</span></div>`;
 
     if (pz.kind === 'vault') {
+        // Firebase drops empty values: a slot nobody has filled arrives with no `value`
         const slots = pz.vault.slots;
         const mine = slots.map((x, i) => ({ ...x, i })).filter(x => x.holder === cls);
         const iSet = slots.map((x, i) => ({ ...x, i })).filter(x => x.setter === cls);
@@ -64,7 +65,7 @@ export function drawPuzzle(box, center, { live, cls, now, send, local }) {
             ${mine.map(x => `<div class="clue-card" style="--to:${CLASSES[x.setter].color}">${crest(x.setter, { size: 46 })}
                 <div><div class="cc-say">TELL THE ${plural(x.setter)}: SLOT ${x.i + 1} IS…</div><div class="cc-clue">${clueHtml(x.clue)}</div></div></div>`).join('')}
             <div class="spz-tip">${mine.length ? 'Find it on the SYMBOL WALL on the projector, then shout the symbol\'s name!' : 'Listen for your clue from another class.'}</div>
-            <div class="slot-pips">${slots.map(x => `<span class="${x.value !== null ? 'set' : ''}">${x.value !== null ? SYMBOLS[x.value].glyph : '?'}</span>`).join('')}</div>
+            <div class="slot-pips">${slots.map(x => `<span class="${x.value != null ? 'set' : ''}">${x.value != null ? SYMBOLS[x.value].glyph : '?'}</span>`).join('')}</div>
             ${pz.vault.checkAt ? '<div class="spz-tip gold" style="font-weight:700">ALL SLOTS IN: LOCKING…</div>' : ''}
         </div>`;
         box.style.display = '';
