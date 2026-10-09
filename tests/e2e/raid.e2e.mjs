@@ -97,7 +97,7 @@ async function botStep(p, accuracy) {
             (choice || ans[0]).click();
             return 'answer';
         }
-        const acts = [...document.querySelectorAll('#g-act .action')].filter(a => !a.disabled);
+        const acts = [...document.querySelectorAll('#g-act [data-ab]')].filter(a => !a.disabled);
         if (acts.length) {
             const pick = acts.find(a => a.classList.contains('called')) || acts.find(a => a.dataset.ab === 'ult') || acts.find(a => a.dataset.ab === 'special') || acts[0];
             pick.click();

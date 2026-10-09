@@ -11,6 +11,7 @@ import { AudioEngine as Audio } from '../audio.js';
 import { mount, esc, $, toast, flash, shake, fmtNum, pct } from '../ui.js';
 import { damageNumber, textPop, hitMarker, slam, streakName, unlock, unlockedList, ACHIEVEMENTS, achievementDesc, confetti } from './juice.js';
 import { crest, CREST_NAMES } from '../content/crests.js';
+import { abilityIcon, ABILITY_STAT, ULT_CALL } from '../content/abilityIcons.js';
 import { heroText, heroColor } from '../content/heroes.js';
 
 const S = {
@@ -216,7 +217,7 @@ function renderTutorial() {
             if (b.dataset.i === '1') { b.classList.add('right'); Audio.sfxCorrect(); setTimeout(() => { i = 1; draw(); }, 600); }
             else { b.classList.add('wrong'); $('#t-ans').children[1].classList.add('right'); Audio.sfxWrong(); toast('Wrong answers cost a little HP, and you see the right one. Try again!'); setTimeout(draw, 1400); }
         };
-        if (i === 1) $('#t-act').onclick = e => { const b = e.target.closest('.action'); if (!b) return; Audio.sfxHit(); i = 2; draw(); };
+        if (i === 1) $('#t-act').onclick = e => { const b = e.target.closest('[data-ab]'); if (!b) return; Audio.sfxHit(); i = 2; draw(); };
         if (i === 2) $('#t-done').onclick = finish;
     };
     const finish = () => { S.tutorialDone = true; S.screen = null; onRoom(S.room); };
@@ -675,11 +676,31 @@ function actionButtons(c, pub, live = true) {
     const spReady = pub.cd <= 0 || !!call;
     const ultReady = pub.ult >= 100;
     const calledAll = callAll && callAll.cls === 'ALL' && !callAll.done && !callAll.who[c.id];
-    return `
-        <button class="action" data-ab="basic"><span class="a-icon">${crest(c.id, { size: 40 })}</span><span><div class="a-name">${esc(a.basic.name.toUpperCase())}</div><div class="a-desc">${esc(a.basic.desc)}</div></span><span class="a-tag"></span></button>
-        <button class="action special ${call || calledAll ? 'called' : ''}" data-ab="special" ${spReady ? '' : 'disabled'}><span class="a-icon">✦</span><span><div class="a-name">${esc(a.special.name.toUpperCase())}</div><div class="a-desc">${esc(a.special.desc)}</div></span><span class="a-tag">${spReady ? (call ? 'CALLED!' : 'READY') : `${pub.cd} MORE`}</span></button>
-        ${ultReady || !live ? `<button class="action ult" data-ab="ult" ${ultReady ? '' : 'disabled'}><span class="a-icon" style="background:#ffa502">★</span><span><div class="a-name">${esc(a.ult.name.toUpperCase())}</div><div class="a-desc">${esc(a.ult.desc)}</div></span><span class="a-tag">READY</span></button>`
-            : `<div class="ult-charging">★ ${esc(a.ult.name.toUpperCase())} CHARGING… ${pub.ult}%</div>`}`;
+    const card = (key, extra, disabled, overlay) => {
+        const ab = a[key];
+        return `<button class="act act-${key} ${extra}" data-ab="${key}" ${disabled ? 'disabled' : ''}>
+            <span class="act-ic">${abilityIcon(ab.id, { size: 62 })}</span>
+            <span class="act-body"><span class="act-kind">${key === 'basic' ? 'BASIC' : 'SPECIAL'}</span><span class="act-name">${esc(ab.name.toUpperCase())}</span><span class="act-desc">${esc(ab.desc)}</span></span>
+            <span class="act-stat">${ABILITY_STAT[ab.id] || ''}</span>${overlay || ''}
+        </button>`;
+    };
+    const u = a.ult;
+    const ult = ultReady
+        ? `<button class="ult-btn ready" data-ab="ult" ${live || ultReady ? '' : 'disabled'}>
+            <span class="ult-fx"></span>
+            <span class="ult-ic">${abilityIcon(u.id, { size: 86 })}</span>
+            <span class="ult-body"><span class="ult-kicker">★ ULTIMATE READY · PRESS IT! ★</span><span class="ult-name">${ULT_CALL[c.id]} ${esc(u.name.toUpperCase())}</span><span class="ult-desc">${esc(u.desc)}</span></span>
+            <span class="ult-ic">${abilityIcon(u.id, { size: 86 })}</span>
+          </button>`
+        : `<button class="ult-btn" data-ab="ult" disabled>
+            <span class="ult-fill" style="width:${pub.ult}%"></span>
+            <span class="ult-ic">${abilityIcon(u.id, { size: 60 })}</span>
+            <span class="ult-body"><span class="ult-kicker">★ ULTIMATE CHARGING · ${pub.ult}%</span><span class="ult-name">${esc(u.name.toUpperCase())}</span><span class="ult-desc">Right answers charge it. ${esc(u.desc)}</span></span>
+          </button>`;
+    return card('basic', '', false, '')
+        + card('special', call || calledAll ? 'called' : '', !spReady,
+            !spReady ? `<span class="act-lock">🔒 ${pub.cd} MORE RIGHT ANSWER${pub.cd > 1 ? 'S' : ''}</span>` : call || calledAll ? '<span class="act-callout">THE BOSS CALLED YOU!</span>' : '')
+        + ult;
 }
 
 function drawActions(box) {
@@ -687,7 +708,7 @@ function drawActions(box) {
     box.innerHTML = `<div class="label" style="text-align:center">CORRECT! CHOOSE YOUR MOVE</div>
         <div class="act-grid" id="g-act">${actionButtons(c, pub)}</div>`;
     $('#g-act').onclick = e => {
-        const b = e.target.closest('.action');
+        const b = e.target.closest('[data-ab]');
         if (!b || b.disabled || S.local !== 'action') return;
         const ab = b.dataset.ab;
         if (c.abilities[ab].target === 'ally') { S.ability = ab; S.local = 'target'; S.lastKey = null; drawControls(); renderSquad(hostNow()); return; }
