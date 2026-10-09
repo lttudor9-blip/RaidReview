@@ -163,3 +163,26 @@ test('System Breach cancels a winding attack', () => {
     assert.equal(s.boss.attack, null);
     assert.equal(tick(s, 5000, seededRng(2)).filter(e => e.type === 'windup').length, 0); // stunned
 });
+
+import { restoreBetweenStages, shiftTime } from '../next/js/rules/engine.js';
+
+test('between stages everyone is patched up and spirits return', () => {
+    const s = raid();
+    s.players.p0.status = 'out'; s.players.p0.lives = 0; s.players.p0.hp = 0;
+    s.players.p1.hp = 10;
+    restoreBetweenStages(s);
+    assert.equal(s.players.p0.status, 'alive');
+    assert.equal(s.players.p0.lives, 1);
+    assert.ok(s.players.p0.hp > 0);
+    assert.ok(s.players.p1.hp > 10);
+});
+
+test('pausing shifts boss timers so nothing fires early', () => {
+    const s = raid();
+    s.boss.cds = { saw: 0, slam: Infinity };
+    tick(s, 0, seededRng(2));
+    const lands = s.boss.attack.landsAt;
+    shiftTime(s, 60000);
+    assert.equal(s.boss.attack.landsAt, lands + 60000);
+    assert.ok(tick(s, lands, seededRng(2)).every(e => e.type !== 'attack'));
+});

@@ -480,3 +480,34 @@ export function tick(state, now, rng = Math.random) {
     }
     return ev;
 }
+
+// ---------------------------------------------------------------- between stages
+
+// After a boss falls: everyone is patched up for the next stage. Eliminated
+// students come back with one life, so every boss is a fresh chance to play.
+export function restoreBetweenStages(state) {
+    for (const p of playersOf(state)) {
+        if (p.status !== 'alive') { p.status = 'alive'; p.hp = 0; p.lives = Math.max(1, p.lives); }
+        p.hp = Math.min(p.maxHp, Math.max(p.hp, 0) + Math.round(p.maxHp * 0.4));
+        p.revive = 0; p.infected = 0; p.armed = false;
+        p.ult = Math.min(100, p.ult + 15);
+    }
+    state.team.syn = {};
+    state.team.synLevel = 1;
+    state.regroupUntil = 0;
+    return [{ type: 'restored' }];
+}
+
+// Pausing: push every pending timer forward by the time spent paused.
+export function shiftTime(state, dt) {
+    const b = state.boss;
+    if (b) {
+        for (const k of ['startedAt', 'endsAt', 'exposedUntil', 'stunUntil']) if (b[k]) b[k] += dt;
+        for (const k of Object.keys(b.cds)) b.cds[k] += dt;
+        if (b.attack) { b.attack.startedAt += dt; b.attack.landsAt += dt; }
+    }
+    if (state.team.dome) state.team.dome += dt;
+    if (state.regroupUntil) state.regroupUntil += dt;
+    for (const k of Object.keys(state.team.syn)) state.team.syn[k] += dt;
+    for (const p of playersOf(state)) if (p.infected) p.infected += dt;
+}

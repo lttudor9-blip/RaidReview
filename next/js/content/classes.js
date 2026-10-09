@@ -17,7 +17,7 @@ export const CLASSES = {
     GUARDIAN: {
         id: 'GUARDIAN', name: 'Guardian', role: 'Protect', color: '#3742fa', hp: 1800,
         tagline: 'Nobody falls on my watch.',
-        passive: 'Bulwark: you have the most HP, and your shields answer the boss\'s SHIELD WALL calls.',
+        passive: 'Bulwark: you have the most HP of any class, and your Shield answers the boss\'s Guardian role calls.',
         abilities: {
             basic: { id: 'bash', name: 'Bash', kind: 'damage', power: 650, desc: 'Deal 650 damage.' },
             special: { id: 'shield', name: 'Shield', kind: 'shield', target: 'ally', cooldown: 2, desc: 'Shield an ally (or yourself). Blocks their next hit.' },
