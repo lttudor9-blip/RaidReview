@@ -53,13 +53,13 @@ function renderNav() {
 // The squad formation: four crests linked to a synergy core (hero art)
 function squadArt() {
     const pos = { WARRIOR: [50, 12], GUARDIAN: [88, 50], MEDIC: [50, 88], TACTICIAN: [12, 50] };
-    const lines = CLASS_IDS.map(c => `<line x1="${pos[c][0]}" y1="${pos[c][1]}" x2="50" y2="50" stroke="${CLASSES[c].color}" />`).join('');
-    const ring = CLASS_IDS.map((c, i) => { const n = CLASS_IDS[(i + 1) % 4]; return `<line x1="${pos[c][0]}" y1="${pos[c][1]}" x2="${pos[n][0]}" y2="${pos[n][1]}" stroke="${CLASSES[c].color}" />`; }).join('');
+    const lines = CLASS_IDS.map(c => `<line x1="${pos[c][0]}" y1="${pos[c][1]}" x2="50" y2="50" />`).join('');
+    const ring = CLASS_IDS.map((c, i) => { const n = CLASS_IDS[(i + 1) % 4]; return `<line x1="${pos[c][0]}" y1="${pos[c][1]}" x2="${pos[n][0]}" y2="${pos[n][1]}" />`; }).join('');
     return `<div class="squad-art" aria-hidden="true">
         <svg class="sa-lines" viewBox="0 0 100 100" preserveAspectRatio="none"><g class="sa-ring">${ring}</g><g class="sa-spokes">${lines}</g></svg>
         <div class="sa-orbit"></div><div class="sa-orbit two"></div>
         <div class="sa-core"><div class="sa-mult">×1.35</div><div class="sa-label">SQUAD SYNERGY</div></div>
-        ${CLASS_IDS.map(c => `<div class="sa-node" data-cls="${c}" style="left:${pos[c][0]}%;top:${pos[c][1]}%">${crest(c, { size: 96, glow: true })}<div class="sa-name">${CLASSES[c].name.toUpperCase()}</div><div class="sa-role">${CLASSES[c].role.toUpperCase()}</div></div>`).join('')}
+        ${CLASS_IDS.map(c => `<div class="sa-node" style="left:${pos[c][0]}%;top:${pos[c][1]}%">${crest(c, { size: 96, className: 'brand' })}<div class="sa-name">${CLASSES[c].name.toUpperCase()}</div><div class="sa-role">${CLASSES[c].role.toUpperCase()}</div></div>`).join('')}
     </div>`;
 }
 
@@ -120,7 +120,7 @@ function renderLanding() {
         <div class="l-kick2">FOUR CLASSES</div>
         <h2 class="l-h2">EVERYONE HAS A JOB</h2>
         <div class="l-classes">${CLASS_IDS.map(id => `
-            <div class="l-class" data-cls="${id}">${crest(id, { size: 72, glow: true })}
+            <div class="l-class">${crest(id, { size: 72, className: 'brand' })}
                 <div class="l-class-name">${CLASSES[id].name.toUpperCase()}</div>
                 <div class="label">${CLASSES[id].role}</div>
                 <p>${esc({ WARRIOR: 'Biggest hits in the raid. Lines up SHATTER combos with the Tacticians.', GUARDIAN: 'Sees who the boss is about to hit and shields them in time.', MEDIC: 'Watches everyone\'s health, heals the lowest, and revives the fallen.', TACTICIAN: 'Sees the boss\'s next move first and exposes it so everyone hits harder.' }[id])}</p>
@@ -200,7 +200,7 @@ function openAuth(mode) {
     const titles = { signin: 'WELCOME BACK', signup: 'CREATE YOUR FREE ACCOUNT', reset: 'RESET YOUR PASSWORD' };
     m.innerHTML = `<div class="modal-box">
         <button class="modal-x" id="a-x">×</button>
-        <div class="row" style="justify-content:center;gap:6px;margin-bottom:10px">${CLASS_IDS.map(c => crest(c, { size: 34 })).join('')}</div>
+        <div class="row" style="justify-content:center;gap:6px;margin-bottom:10px">${CLASS_IDS.map(c => crest(c, { size: 34, className: 'brand' })).join('')}</div>
         <div class="modal-title">${titles[mode]}</div>
         <div class="stack">
             <input class="field" id="a-email" type="email" placeholder="School email" autocomplete="email">
