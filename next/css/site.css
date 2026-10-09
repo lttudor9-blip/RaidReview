@@ -4,11 +4,10 @@
    ============================================================ */
 
 /* Brand: two colors. Raid Gold leads, Raid Violet supports. Class colors
-   (red/blue/green/purple) belong to the game screens, not the website. */
+   are kept only for the class crests and the game screens. */
 :root { --brand: #ffb020; --brand-hi: #ffd36b; --brand-2: #7c5cff; --brand-2-hi: #a28bff; --gold: var(--brand); }
 .btn.primary { background: linear-gradient(135deg, #8b6dff, #5b3fd6); border-color: var(--brand-2-hi); }
 .btn.gold { background: linear-gradient(135deg, var(--brand-hi), var(--brand) 55%, #e08a00); border-color: var(--brand-hi); }
-.crest.brand { filter: grayscale(1) sepia(1) saturate(3.2) hue-rotate(-8deg) brightness(1.05) drop-shadow(0 0 14px rgba(255, 176, 32, 0.45)); }
 body { overflow-y: auto; user-select: text; background: radial-gradient(ellipse at 50% -10%, #1d1640 0%, var(--bg) 55%) fixed, var(--bg); }
 textarea { font: inherit; color: inherit; }
 a { color: inherit; text-decoration: none; }
