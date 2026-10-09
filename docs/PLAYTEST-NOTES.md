@@ -32,3 +32,7 @@ What was really going on:
 | # | Where | What happened | Fix |
 |---|---|---|---|
 | 7 | Landing page | The class icons were still flashing and "tweaking out" after the first fix | The real cause was website-only effects that are known to flicker on Chromebook graphics chips: a blurred see-through nav bar (`backdrop-filter`), a fixed background, and nonstop animations under them (spinning rings, flowing dashes, floating crests). Removed all three. The hero graphic is now static. Devices set to "reduce motion" get calm screens everywhere. |
+
+**Puzzles:** students really liked them. They failed the first time, learned from their mistakes, and solved it on the next try. This is the loop we want: failing should teach, not just punish.
+
+**Feature requests from students:** to be collected.
