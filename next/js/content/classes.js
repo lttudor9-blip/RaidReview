@@ -9,8 +9,8 @@ export const CLASSES = {
         tagline: 'Hit first. Hit hardest.',
         passive: 'Rage: answer streaks boost your damage twice as much as other classes.',
         abilities: {
-            basic: { id: 'strike', name: 'Strike', kind: 'damage', power: 900, desc: 'Deal 900 damage.' },
-            special: { id: 'cleave', name: 'Cleave', kind: 'damage', power: 1600, cooldown: 2, desc: 'Deal 1,600 damage. Crits for ×1.5 on an Exposed boss.' },
+            basic: { id: 'strike', name: 'Strike', kind: 'damage', power: 800, desc: 'Deal 800 damage.' },
+            special: { id: 'cleave', name: 'Cleave', kind: 'damage', power: 1400, cooldown: 2, desc: 'Deal 1,400 damage. Crits for ×1.5 on an Exposed boss.' },
             ult: { id: 'wrath', name: "Titan's Wrath", kind: 'damage', power: 6000, comboPower: 12000, desc: 'Deal 6,000 damage, or 12,000 on an Exposed boss (SHATTER).' }
         }
     },
@@ -48,7 +48,9 @@ export const CLASSES = {
 
 // Team synergy: distinct classes that acted in the last SYNERGY_WINDOW ms
 export const SYNERGY_WINDOW = 10000;
-export const SYNERGY_MULT = [1, 1, 1.1, 1.25, 1.5]; // index = number of distinct classes
+export const SYNERGY_MULT = [1, 1, 1.1, 1.2, 1.35]; // index = number of distinct classes
+// A raid made of a single class can never build synergy and hits weaker
+export const MONO_CLASS_PENALTY = 0.7;
 
 // Answer streak damage bonus (Warriors get double)
 export const STREAK_BONUS = [

@@ -6,7 +6,8 @@
 // `teamwork` is the chance a student notices a role call / ally in trouble and
 // responds — it stands in for how well the class communicates.
 
-import { createRaid, addPlayer, answer, act, canAct, startBoss, tick } from '../../next/js/rules/engine.js';
+import { createRaid, addPlayer, answer, act, canAct, startBoss, tick, restoreBetweenStages } from '../../next/js/rules/engine.js';
+import { startPuzzle, applyPuzzleOutcome } from '../../next/js/rules/puzzles.js';
 import { CLASS_IDS } from '../../next/js/content/classes.js';
 import { FORMATS } from '../../next/js/content/raid.js';
 
@@ -58,10 +59,22 @@ export function simulateRaid({ students = 24, mix = null, accuracy = 0.75, answe
     const classes = mix || CLASS_IDS;
     for (let i = 0; i < students; i++) addPlayer(s, `p${i}`, { name: `S${i}`, cls: classes[i % classes.length] });
     const next = {};
-    const bosses = FORMATS[format].stages.filter(x => x.startsWith('boss:')).map(x => x.slice(5));
+    const stages = FORMATS[format].stages;
     let t = 0;
-    const out = [];
-    for (const bossId of bosses) {
+    const out = [], puzzles = [];
+    for (const [si, spec] of stages.entries()) {
+        if (spec.startsWith('puzzle')) {
+            // a squad that communicates usually cracks it; one that doesn't usually fails
+            startPuzzle(s, spec.split(':')[1] || 'vault', t, rng);
+            const solved = rng() < Math.min(0.95, 0.2 + 0.8 * teamwork);
+            s.puzzle.status = solved ? 'solved' : 'failed';
+            applyPuzzleOutcome(s);
+            puzzles.push(solved);
+            t += 90000;
+            continue;
+        }
+        if (si > 0 && !stages[si - 1].startsWith('puzzle')) restoreBetweenStages(s);
+        const bossId = spec.slice(5);
         startBoss(s, bossId, t);
         const start = t;
         let wipes = 0, downs = 0, calls = 0, callsMet = 0, enraged = false;
@@ -93,33 +106,39 @@ export function simulateRaid({ students = 24, mix = null, accuracy = 0.75, answe
                 next[p.id] = t + delay;
             }
         }
-        out.push({ boss: bossId, secs: Math.round((t - start) / 1000), won: !!s.boss.defeatedAt, wipes, downs, calls, callsMet, enraged, dmgByClass });
+        out.push({ boss: bossId, secs: Math.round((t - start) / 1000), limit: Math.round((s.boss.endsAt - start) / 1000), won: !!s.boss.defeatedAt, wipes, downs, calls, callsMet, enraged, dmgByClass });
         if (s.status === 'defeat') break;
     }
-    return { result: s.status === 'defeat' ? 'DEFEAT' : 'VICTORY', raidLivesLeft: s.raidLives, bosses: out };
+    return { result: s.status === 'defeat' ? 'DEFEAT' : 'VICTORY', raidLivesLeft: s.raidLives, bosses: out, puzzles };
 }
 
 function summarize(label, runs) {
     const wins = runs.filter(r => r.result === 'VICTORY').length;
+    const lives = runs.filter(r => r.result === 'VICTORY').map(r => r.raidLivesLeft);
+    const lostAt = {};
+    for (const r of runs) if (r.result === 'DEFEAT') { const b = r.bosses[r.bosses.length - 1].boss; lostAt[b] = (lostAt[b] || 0) + 1; }
     const byBoss = {};
     for (const r of runs) for (const b of r.bosses) {
-        const x = byBoss[b.boss] ||= { n: 0, secs: 0, wipes: 0, downs: 0, calls: 0, met: 0, enraged: 0 };
-        x.n++; x.secs += b.secs; x.wipes += b.wipes; x.downs += b.downs; x.calls += b.calls; x.met += b.callsMet; x.enraged += b.enraged ? 1 : 0;
+        const x = byBoss[b.boss] ||= { n: 0, secs: 0, limit: 0, wipes: 0, downs: 0, calls: 0, met: 0, enraged: 0 };
+        x.n++; x.secs += b.secs; x.limit += b.limit; x.wipes += b.wipes; x.downs += b.downs; x.calls += b.calls; x.met += b.callsMet; x.enraged += b.enraged ? 1 : 0;
     }
-    console.log(`\n${label}: win ${wins}/${runs.length}`);
+    console.log(`\n${label}: win ${wins}/${runs.length}` + (lives.length ? `  (wins with lives left: ${[1, 2, 3].map(n => `${n}♥ ${lives.filter(l => l === n).length}`).join(', ')})` : '') + (Object.keys(lostAt).length ? `  lost at: ${Object.entries(lostAt).map(([b, n]) => `${b} ${n}`).join(', ')}` : ''));
     for (const [id, x] of Object.entries(byBoss)) {
-        console.log(`  ${id.padEnd(10)} ${String(Math.round(x.secs / x.n)).padStart(4)}s  wipes ${(x.wipes / x.n).toFixed(1)}  downs ${(x.downs / x.n).toFixed(1)}  role calls met ${x.calls ? Math.round(100 * x.met / x.calls) : 0}%  timer-enraged ${Math.round(100 * x.enraged / x.n)}%`);
+        console.log(`  ${id.padEnd(10)} ${String(Math.round(x.secs / x.n)).padStart(4)}s of ${String(Math.round(x.limit / x.n)).padStart(3)}s  wipes ${(x.wipes / x.n).toFixed(1)}  downs ${(x.downs / x.n).toFixed(1)}  role calls met ${x.calls ? Math.round(100 * x.met / x.calls) : 0}%  timer-enraged ${Math.round(100 * x.enraged / x.n)}%`);
     }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-    const N = 20;
+    const N = +(process.env.SIM_RUNS || 40);
     const runs = cfg => Array.from({ length: N }, (_, i) => simulateRaid({ ...cfg, seed: i + 1 }));
     summarize('Typical class (24 students, mixed, 75% accuracy, good teamwork)', runs({}));
+    summarize('Same class, so-so teamwork (45%)', runs({ teamwork: 0.45 }));
     summarize('Same class, poor teamwork (20%)', runs({ teamwork: 0.2 }));
+    summarize('Warrior-heavy class (half Warriors)', runs({ mix: ['WARRIOR', 'GUARDIAN', 'WARRIOR', 'MEDIC', 'WARRIOR', 'TACTICIAN'] }));
     summarize('All Warriors', runs({ mix: ['WARRIOR'] }));
     summarize('Struggling class (55% accuracy, 9s answers)', runs({ accuracy: 0.55, answerSecs: 9 }));
     summarize('Small group (6 students)', runs({ students: 6 }));
     summarize('Elementary difficulty, 60% accuracy', runs({ difficulty: 'elementary', accuracy: 0.6, answerSecs: 9 }));
+    summarize('Struggling class on Elementary (55%, 9s, so-so teamwork)', runs({ difficulty: 'elementary', accuracy: 0.55, answerSecs: 9, teamwork: 0.45 }));
     summarize('Heroic difficulty, strong class (85%)', runs({ difficulty: 'heroic', accuracy: 0.85 }));
 }

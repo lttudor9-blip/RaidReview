@@ -77,8 +77,8 @@ for (let i = 0; i < 4; i++) {
 await sleep(800);
 await shot(host, 'h01_lobby');
 
-// quick format so the run is short
-await host.click('#seg-format [data-v="quick"]');
+// standard format: 3 bosses and both raid puzzles (fights are sped up below)
+await host.click('#seg-format [data-v="standard"]');
 await host.click('#btn-start');
 await sleep(2500);
 await shot(host, 'h02_boss_intro');
@@ -110,6 +110,38 @@ async function botStep(p, accuracy) {
     }, { known, accuracy });
 }
 
+// Raid puzzles: the harness plays the part of kids shouting across the room.
+// It reads the answer from the host and has the right class's bot press the
+// right button on its own Chromebook. One deliberate mistake per puzzle checks
+// that strikes work.
+const pzDone = {};
+async function drivePuzzle(kind) {
+    const pz = await host.evaluate(() => { const p = window.__rrHost.engine.puzzle; return p && JSON.parse(JSON.stringify(p)); });
+    if (!pz || pz.status !== 'active') return;
+    const d = (pzDone[kind] ||= { shots: false, wrong: false });
+    const page = cls => students[CLASSES.indexOf(cls)];
+    if (!d.shots) {
+        d.shots = true;
+        await sleep(400);
+        await shot(host, `h08_${kind}`);
+        for (const [i, p] of students.entries()) await shot(p, `s10_${kind}_${CLASSES[i]}`);
+    }
+    if (pz.strikes >= 1 && !d.wrong) { d.wrong = true; await sleep(300); await shot(host, `h09_${kind}_strike`); await shot(students[0], `s11_${kind}_strike`); }
+    if (kind === 'vault') {
+        for (const [i, x] of pz.vault.slots.entries()) {
+            const want = i === 0 && !d.wrong ? (x.answer + 1) % 6 : x.answer;
+            if (x.value === want) continue;
+            if (i === 0 && !d.wrong && x.value !== null) continue; // wait for the strike to clear it
+            await page(x.setter).click(`.keypad[data-slot="${i}"] button[data-v="${want}"]`).catch(() => {});
+        }
+    } else {
+        const R = pz.reactor, seq = R.rounds[R.round];
+        const cls = !d.wrong && R.progress === 2 ? CLASSES.find(c => c !== seq[2] && c !== seq[1]) : seq[R.progress];
+        await page(cls).click('#spz-press').catch(() => {});
+        await sleep(250);
+    }
+}
+
 const t0 = Date.now();
 let shots = { rolecall: false, stuAction: false, stuCall: false, fight: false, classes: false, reveal: false, hero: 0 };
 const fightStart = { t: 0 };
@@ -122,9 +154,17 @@ while (Date.now() - t0 < 6 * 60000) {
         if (shots.stuAction && !shots.stuHit && r.startsWith('act') && i === 0) { await sleep(350); await shot(p, 's04b_damage_number'); shots.stuHit = true; }
         if (!shots.stuTarget && i === 2 && await p.$('.sq-card.targetable')) { await shot(p, 's04c_targeting'); shots.stuTarget = true; }
     }
-    const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, boss: H.engine.boss && { hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call } }; });
+    const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, puzzles: H.engine.puzzleLog, boss: H.engine.boss && { hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call } }; });
     if (state.heroes > shots.hero && shots.hero < 2) { shots.hero = state.heroes; await sleep(500); await shot(host, `h06_hero_${shots.hero}`); await shot(students[0], `s08_hero_${shots.hero}`); }
     if (state.ended) break;
+    if (state.stage?.kind === 'puzzle') {
+        const k = state.stage.id;
+        if (state.stage.phase === 'intro') {
+            if (!shots['pzi' + k]) { shots['pzi' + k] = true; await sleep(800); await shot(host, `h07_${k}_intro`); await shot(students[0], `s09_${k}_intro`); }
+            await host.click('#pz-go').catch(() => {});
+        } else if (state.stage.phase === 'puzzle') await drivePuzzle(k);
+        else if (state.stage.phase === 'outro' && !shots['pzo' + k]) { shots['pzo' + k] = true; await sleep(1500); await shot(host, `h10_${k}_result`); await shot(students[1], `s12_${k}_result`); }
+    }
     if (!shots.reveal && await students[0].$('.class-reveal')) { await shot(students[0], 's00_class_reveal'); shots.reveal = true; }
     if (!shots.fight && state.stage?.phase === 'fight') { await sleep(400); await shot(host, 'h03_fight'); shots.fight = true; fightStart.t = Date.now(); }
     if (!shots.classes && fightStart.t && Date.now() - fightStart.t > 9000) { for (const [i, p] of students.entries()) await shot(p, `s07_${CLASSES[i]}`); shots.classes = true; }
@@ -142,9 +182,11 @@ await sleep(1500);
 await shot(host, 'h05_results');
 await shot(students[0], 's06_end');
 
-const final = await host.evaluate(() => { const H = window.__rrHost; const f = H.feed.join('\n'); return { events: H.counts, secs: Math.round((Date.now() - performance.timeOrigin) / 1000), ended: H.ended, status: H.engine.status, stageIdx: H.stageIdx, players: Object.values(H.engine.players).map(p => ({ cls: p.cls, ...p.stats })) }; });
+const final = await host.evaluate(() => { const H = window.__rrHost; const f = H.feed.join('\n'); return { puzzles: H.engine.puzzleLog, events: H.counts, secs: Math.round((Date.now() - performance.timeOrigin) / 1000), ended: H.ended, status: H.engine.status, stageIdx: H.stageIdx, players: Object.values(H.engine.players).map(p => ({ cls: p.cls, ...p.stats })) }; });
 console.log('bot actions:', JSON.stringify(counts));
 console.log('final:', JSON.stringify(final));
 console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no page errors');
 await browser.close();
-process.exit(final.ended && !errors.length ? 0 : 1);
+const puzzlesOk = (final.puzzles || []).length === 2 && final.puzzles.every(p => p.solved && p.strikes === 1);
+console.log(puzzlesOk ? 'both puzzles solved after one strike each' : 'PUZZLES NOT AS EXPECTED: ' + JSON.stringify(final.puzzles));
+process.exit(final.ended && !errors.length && puzzlesOk ? 0 : 1);

@@ -35,7 +35,7 @@ test('synergy grows with each distinct class in the window', () => {
     const s = raid();
     assert.equal(synergyMult(s, 0), 1);
     for (const pid of ['p0', 'p1', 'p2', 'p3']) { answer(s, pid, true, 1000); act(s, pid, { ability: 'basic' }, 1000); }
-    assert.equal(synergyMult(s, 1000), 1.5);
+    assert.equal(synergyMult(s, 1000), 1.35);
     assert.equal(synergyMult(s, 20000), 1); // window expired
 });
 
@@ -144,11 +144,13 @@ test('three wipes lose the raid', () => {
     assert.equal(s.status, 'defeat');
 });
 
-test('boss HP scales with players but never below three', () => {
+test('boss HP scales with players, never below three, and eases off in small rooms', () => {
     const one = raid(['WARRIOR']);
-    const ten = raid(Array(10).fill('MEDIC'));
-    assert.equal(one.boss.maxHp, BOSSES.raider.hpPerPlayer * 3);
-    assert.equal(ten.boss.maxHp, BOSSES.raider.hpPerPlayer * 10);
+    const three = raid(['WARRIOR', 'MEDIC', 'GUARDIAN']);
+    const twenty = raid(Array(20).fill('MEDIC'));
+    assert.equal(one.boss.maxHp, three.boss.maxHp);
+    assert.ok(one.boss.maxHp < BOSSES.raider.hpPerPlayer * 3, 'small rooms get a softer boss');
+    assert.equal(twenty.boss.maxHp, BOSSES.raider.hpPerPlayer * 20);
 });
 
 test('System Breach cancels a winding attack', () => {

@@ -688,3 +688,106 @@ table.board td.num { text-align: right; font-variant-numeric: tabular-nums; }
 #achv .achv-desc { font-size: 0.78rem; }
 @media (max-width: 820px) { #achv { right: 12px; bottom: 12px; } }
 .ult-btn > .ult-fill { position: absolute; z-index: 0; }
+
+/* ============================================================
+   RAID PUZZLES — projector
+   ============================================================ */
+.pz-how { display: grid; gap: 10px; margin: 22px auto 10px; max-width: 900px; text-align: left; font-size: clamp(1.1rem, 1.9vw, 1.5rem); }
+.pz-how > div { display: flex; gap: 14px; align-items: center; }
+.pz-how b { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-family: var(--display); background: #ffd32a; color: #1a1400; }
+.pz-stakes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 900px; width: 100%; margin: 14px auto 22px; }
+.pz-stakes > div, .pz-result { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; border-radius: 16px; text-align: left; }
+.pz-stakes b, .pz-result b { font-family: var(--display); font-size: 1.15rem; letter-spacing: 0.06em; }
+.pz-stakes .ok, .pz-result.ok { background: rgba(46, 213, 115, 0.12); border: 2px solid rgba(46, 213, 115, 0.6); }
+.pz-stakes .ok b, .pz-result.ok b { color: #7bed9f; }
+.pz-stakes .bad, .pz-result.bad { background: rgba(255, 71, 87, 0.12); border: 2px solid rgba(255, 71, 87, 0.6); }
+.pz-stakes .bad b, .pz-result.bad b { color: #ff6b81; }
+.pz-result { margin-top: 18px; text-align: center; align-items: center; font-size: 1.4rem; padding: 18px 30px; }
+.pz-result b { font-size: 1.8rem; }
+
+.pz .host-main { background: radial-gradient(ellipse at 50% 30%, rgba(255, 211, 42, 0.07), transparent 60%); }
+.pz-arena { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
+.pz-arena .fx-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.strikes { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.strikes i { width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(255, 71, 87, 0.5); background: rgba(255, 71, 87, 0.08); }
+.strikes i.on { background: #ff4757; border-color: #ff8a96; box-shadow: 0 0 18px #ff4757; animation: slam 0.5s both; }
+.strikes .label { margin-left: 6px; }
+
+/* the vault */
+.vault-door { position: relative; padding: 26px 30px 18px; border-radius: 28px; background: radial-gradient(circle at 50% 40%, #2a2a3e, #12121c 70%); border: 4px solid #3a3a52;
+    box-shadow: inset 0 0 0 6px #1a1a28, inset 0 0 60px rgba(0, 0, 0, 0.7), 0 20px 60px rgba(0, 0, 0, 0.6); }
+.vd-ring { position: absolute; inset: 10px; border-radius: 22px; border: 2px dashed rgba(255, 211, 42, 0.25); pointer-events: none; }
+.vault-door.locking { animation: lockGlow 0.8s ease-in-out infinite; }
+@keyframes lockGlow { 50% { box-shadow: inset 0 0 0 6px #1a1a28, inset 0 0 60px rgba(0, 0, 0, 0.7), 0 0 50px rgba(255, 211, 42, 0.55); } }
+.vslots { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 18px; }
+.vslot { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 10px; border-radius: 18px; background: rgba(0, 0, 0, 0.45); border: 3px solid color-mix(in srgb, var(--cls) 70%, transparent); }
+.vs-n { font-family: var(--mono); letter-spacing: 0.2em; color: var(--ink-3); }
+.vs-g { width: 110px; height: 110px; border-radius: 18px; display: grid; place-items: center; font-size: 4.4rem; line-height: 1; color: rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.04); border: 2px solid var(--line-2); }
+.vslot.set .vs-g { color: #fff; border-color: var(--cls); box-shadow: 0 0 24px color-mix(in srgb, var(--cls) 60%, transparent); }
+.vslot.pop .vs-g { animation: slam 0.35s both; }
+.vslot.bad .vs-g { animation: shake 0.5s; border-color: #ff4757; box-shadow: 0 0 30px #ff4757; }
+.vs-who { display: flex; align-items: center; gap: 6px; font-family: var(--display); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; color: var(--cls); }
+.vd-lock { text-align: center; margin-top: 12px; font-family: var(--display); font-weight: 900; letter-spacing: 0.12em; color: #ffd32a; min-height: 1.4em; }
+.wall-wrap { display: flex; flex-direction: column; gap: 8px; }
+.wall { display: grid; grid-template-columns: repeat(6, 120px); gap: 12px; }
+.wtile { display: flex; flex-direction: column; align-items: center; padding: 8px 6px 10px; border-radius: 16px; background: rgba(0, 0, 0, 0.5); border: 3px solid var(--c); box-shadow: 0 0 22px color-mix(in srgb, var(--c) 35%, transparent); }
+.wt-n { font-family: var(--display); font-weight: 900; color: var(--ink-3); font-size: 0.9rem; }
+.wt-g { font-size: 3.6rem; line-height: 1.1; color: var(--c); text-shadow: 0 0 18px var(--c); }
+.wt-c { font-family: var(--display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.1em; color: var(--c); }
+.clue-map { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 12px; font-size: 1.05rem; }
+.clue-map > div { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.clue-map .label { width: 54px; flex: none; }
+.cm-who { display: inline-flex; align-items: center; gap: 4px; font-family: var(--display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.04em; }
+.cm-arrow { color: var(--ink-3); font-size: 0.8rem; margin: 0 2px; }
+.overlay .pz-go { min-height: 72px; padding: 0 48px; font-size: 1.3rem; }
+
+/* the reactor */
+.reactor { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.core { --p: 0; position: relative; width: min(46vh, 420px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
+    background: conic-gradient(#ffd32a calc(var(--p) * 360deg), rgba(255, 255, 255, 0.06) 0); box-shadow: 0 0 calc(30px + var(--p) * 70px) rgba(255, 211, 42, calc(0.2 + var(--p) * 0.5)); transition: box-shadow 0.3s ease; }
+.core-in { width: 82%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: radial-gradient(circle, #2a2410, #0b0a06 70%); border: 3px solid rgba(255, 211, 42, 0.4); }
+.core.pulse .core-in { animation: slam 0.4s both; }
+.core-label { font-family: var(--display); font-weight: 900; letter-spacing: 0.12em; color: #ffd32a; }
+.core-last { display: flex; flex-direction: column; align-items: center; font-family: var(--display); font-weight: 700; min-height: 90px; }
+.core-steps { display: flex; gap: 12px; }
+.core-steps i { width: 34px; height: 34px; border-radius: 10px; border: 3px solid rgba(255, 211, 42, 0.35); background: rgba(255, 211, 42, 0.05); }
+.core-steps i.on { background: #ffd32a; border-color: #fff3b0; box-shadow: 0 0 16px #ffd32a; }
+.core-steps i.next { border-color: #fff; animation: pulse 0.8s infinite; }
+.intel-badge { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-radius: 16px; background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line-2); font-size: 1.2rem; }
+
+/* ============================================================
+   RAID PUZZLES — student Chromebook
+   ============================================================ */
+.spz { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 820px; margin: 0 auto; }
+.spz-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-family: var(--display); font-weight: 900; letter-spacing: 0.08em; }
+.spz-top .t { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.spz-top .t.danger { color: #ff4757; animation: pulse 0.8s infinite; }
+.spz-strikes { display: flex; gap: 6px; }
+.spz-strikes i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(255, 71, 87, 0.5); }
+.spz-strikes i.on { background: #ff4757; box-shadow: 0 0 10px #ff4757; }
+.clue-card { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 16px; text-align: left; background: rgba(0, 0, 0, 0.55); border: 3px solid var(--to); box-shadow: 0 0 26px color-mix(in srgb, var(--to) 35%, transparent); animation: slam 0.5s both; }
+.clue-card .cc-say { font-family: var(--display); font-weight: 900; font-size: 0.8rem; letter-spacing: 0.08em; color: var(--to); }
+.clue-card .cc-clue { font-size: clamp(1.25rem, 2.6vw, 1.7rem); font-weight: 700; line-height: 1.2; }
+.clue-card .cc-clue b { color: var(--cc, #ffd32a); }
+.spz-tip { color: var(--ink-2); font-size: 0.95rem; text-align: center; }
+.keypad-row { display: flex; flex-direction: column; gap: 6px; }
+.keypad-row .label { color: var(--cls); }
+.keypad { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.keypad button { min-height: 104px; border-radius: 14px; font-size: 2.6rem; line-height: 1; background: linear-gradient(180deg, rgba(30, 30, 46, 0.95), rgba(12, 12, 20, 0.95)); border: 2px solid color-mix(in srgb, var(--cls) 55%, transparent); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.keypad button small { font-family: var(--display); font-size: 0.55rem; letter-spacing: 0.08em; color: var(--ink-2); }
+.keypad button:hover { border-color: var(--cls); box-shadow: 0 0 16px color-mix(in srgb, var(--cls) 50%, transparent); }
+.keypad button.on { background: var(--cls); color: #0a0a12; border-color: #fff; box-shadow: 0 0 22px var(--cls); }
+.keypad button.on small { color: #0a0a12; }
+.slot-pips { display: flex; gap: 8px; justify-content: center; }
+.slot-pips span { min-width: 54px; padding: 4px 8px; border-radius: 10px; text-align: center; font-size: 1.3rem; border: 2px solid var(--line-2); background: rgba(0, 0, 0, 0.4); }
+.slot-pips span.set { border-color: #ffd32a; color: #ffd32a; }
+.seq { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.seq .st { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; border-radius: 12px; border: 2px solid var(--line-2); min-width: 74px; font-family: var(--display); font-size: 0.6rem; font-weight: 700; }
+.seq .st.done { opacity: 0.35; }
+.seq .st.now { border-color: #ffd32a; box-shadow: 0 0 20px rgba(255, 211, 42, 0.6); transform: scale(1.12); }
+.seq-now { font-family: var(--display); font-weight: 900; font-size: clamp(1.6rem, 3.6vw, 2.6rem); text-align: center; }
+.press-btn { position: relative; width: 100%; min-height: 150px; border-radius: 24px; font-family: var(--display); font-weight: 900; font-size: clamp(1.8rem, 4vw, 2.8rem); letter-spacing: 0.08em; color: #0a0a12;
+    background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--cls) 80%, #fff 20%), var(--cls) 60%, color-mix(in srgb, var(--cls) 60%, #000)); border: 4px solid #fff; box-shadow: 0 0 40px color-mix(in srgb, var(--cls) 60%, transparent), inset 0 -8px 0 rgba(0, 0, 0, 0.25); }
+.press-btn:active { transform: translateY(4px) scale(0.98); box-shadow: 0 0 20px var(--cls), inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
+.press-btn small { display: block; font-size: 0.85rem; letter-spacing: 0.06em; opacity: 0.8; }
+.press-btn.cool { filter: grayscale(0.6) brightness(0.7); }

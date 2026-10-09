@@ -99,7 +99,8 @@ export const ACHIEVEMENTS = {
     comeback: 'BACK FROM THE DEAD',
     spirit: 'UNDYING SPIRIT',
     untouchable: 'UNTOUCHABLE',
-    interrupt: 'SYSTEM CRASH'
+    interrupt: 'SYSTEM CRASH',
+    puzzle: 'CODE BREAKER'
 };
 const DESCS = {
     first_blood: 'Land your first hit', crit: 'Land a critical hit', heavy: 'Deal 5,000+ in one hit', shatter: 'Trigger a SHATTER combo',
@@ -108,7 +109,7 @@ const DESCS = {
     clutch: 'Answer right while under 20% HP', call: 'Answer a boss role call', saver: 'Help stop a boss attack', revive1: 'Revive a teammate',
     revive3: 'Revive 3 teammates', bodyguard: 'Shield 5 teammates', save: 'Your shield blocks a boss hit on a teammate', save3: 'Make 3 clutch saves', hero: 'Star in a hero moment', medic: 'Heal 3 teammates', weakpoint: 'Expose the boss 3 times',
     ult: 'Use your ultimate', synergy: 'Fight with all four classes at once', comeback: 'Get back up after going down', spirit: 'Keep answering after you\'re out',
-    untouchable: 'Beat a boss without going down', interrupt: 'Interrupt a boss attack'
+    untouchable: 'Beat a boss without going down', interrupt: 'Interrupt a boss attack', puzzle: 'Solve a raid puzzle with your squad'
 };
 export const achievementDesc = id => DESCS[id] || '';
 

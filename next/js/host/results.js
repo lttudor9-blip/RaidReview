@@ -5,6 +5,7 @@ import { CLASSES } from '../content/classes.js';
 import { mount, esc, fmtNum } from '../ui.js';
 import { crest } from '../content/crests.js';
 import { heroColor } from '../content/heroes.js';
+import { PUZZLES } from '../content/puzzles.js';
 
 const AWARDS = [
     { title: 'RAID MVP', stat: p => p.stats.dmg, fmt: v => `${fmtNum(v)} damage` },
@@ -56,6 +57,9 @@ export function renderResults(H, won) {
             </div>
             ${awards.length && ps.length > 1 ? `<div class="awards">${awards.map(a => `
                 <div class="award" data-cls="${a.p.cls}" style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center">${crest(a.p.cls, { size: 64, glow: true })}<div><div class="aw-title">${a.title}</div><div class="aw-name">${esc(a.p.name)}</div><div class="aw-stat">${CLASSES[a.p.cls].name} · ${a.fmt(a.value, a.p)}</div></div></div>`).join('')}</div>` : ''}
+            ${(H.engine.puzzleLog || []).length ? `<div class="panel"><div class="label" style="margin-bottom:8px">RAID PUZZLES</div>${H.engine.puzzleLog.map(p => `
+                <div class="missed-row" style="grid-template-columns:1fr auto;align-items:center"><div><div class="display" style="font-size:1.15rem;color:${p.solved ? '#2ed573' : '#ff4757'}">${esc(PUZZLES[p.kind].name)}: ${esc(PUZZLES[p.kind][p.solved ? 'solved' : 'failed'].title)}</div>
+                <div class="muted">${p.solved ? `Solved in ${p.secs}s` : 'Not solved'} · ${p.strikes} strike${p.strikes === 1 ? '' : 's'} · ${esc(PUZZLES[p.kind][p.solved ? 'solved' : 'failed'].reward)}</div></div><div style="font-size:2rem">${p.solved ? '✓' : '✕'}</div></div>`).join('')}</div>` : ''}
             ${H.heroes.length ? `<div class="panel"><div class="label" style="margin-bottom:8px">★ HERO MOMENTS</div>${H.heroes.slice(0, 8).map(h => `
                 <div class="missed-row" style="grid-template-columns:auto 1fr;align-items:center"><div style="display:flex;gap:4px">${h.pids.map(pid => H.engine.players[pid]).filter(Boolean).map(p => crest(p.cls, { size: 40 })).join('') || '★'}</div>
                 <div><div class="display" style="font-size:1.15rem;color:${heroColor(h.kind)}">${esc(h.title)}</div><div class="muted">${esc(h.sub)}</div></div></div>`).join('')}</div>` : ''}

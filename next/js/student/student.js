@@ -13,6 +13,7 @@ import { damageNumber, textPop, hitMarker, slam, streakName, unlock, unlockedLis
 import { crest, CREST_NAMES } from '../content/crests.js';
 import { abilityIcon, ABILITY_STAT, ULT_CALL } from '../content/abilityIcons.js';
 import { heroText, heroColor } from '../content/heroes.js';
+import { drawPuzzle, puzzleKey, puzzleTick } from './puzzle.js';
 
 const S = {
     code: null, pid: null, room: null, me: null, live: {},
@@ -121,7 +122,7 @@ function renderClasses() {
         <div class="hs-head">
             <div class="label">ASSEMBLE YOUR SQUAD</div>
             <div class="hs-title">CHOOSE YOUR CLASS</div>
-            <div class="muted">A squad with all four classes hits ×1.5 harder. Pick what your team needs!</div>
+            <div class="muted">A squad with all four classes hits ×1.35 harder. Pick what your team needs! Pick what your team needs!</div>
         </div>
         <div class="hs-grid" id="hs-grid">${CLASS_IDS.map(id => {
             const c = CLASSES[id], a = c.abilities, st = CLASS_STATS[id];
@@ -398,6 +399,7 @@ function updateGame() {
     $('#intel').hidden = !inFight();
     if (inFight()) $('#intel-b').innerHTML = intel(now);
     $('#banners').innerHTML = banners(now);
+    if (S.live.stage?.kind === 'puzzle') puzzleTick(S.live, now);
     renderSquad(now);
 
     // a new role call for my class re-draws the action panel so the special lights up
@@ -541,6 +543,7 @@ function renderSquad(now) {
 
 function situationKey() {
     const st = S.live.stage || {};
+    if (st.kind === 'puzzle') return ['puzzle', st.id, S.live.paused, puzzleKey(S.live)].join('|');
     return [st.kind, st.id, st.phase, S.live.paused, S.live.regroupUntil > hostNow(), S.local, S.me.pub.status, S.q?.i ?? -1].join('|');
 }
 
@@ -565,6 +568,10 @@ function drawControlsInto(box, center) {
 
     if (S.live.paused) return idle('PAUSED', 'Eyes on your teacher.');
     if (S.live.regroupUntil > hostNow()) return idle('SQUAD WIPED', 'Regroup! Talk it out: who needs to do what next time?', '#ff4757');
+    if (stage.kind === 'puzzle') {
+        S.q = null; S.local = 'question';
+        return drawPuzzle(box, center, { live: S.live, cls: pub.cls, now: hostNow(), send: it => sendIntent(S.code, S.pid, it), local: (S.pzLocal ||= {}) });
+    }
     if (stage.kind === 'boss' && stage.phase === 'intro') {
         S.stageSnap = { ...(S.me.stats || {}) }; S.downThisBoss = false; S.achvAtStart = unlockedList().length;
         return idle(BOSSES[stage.id].name, 'GET READY…', BOSSES[stage.id].color);
@@ -587,7 +594,7 @@ function waveClear(box, center) {
     const rest = S.live.stage.kind === 'rest';
     center.innerHTML = `<div class="clear-card">
         <div class="display" style="font-size:clamp(2.2rem,5vw,3.6rem);color:#2ed573;animation:slam .6s both">${rest ? 'SUPPLY DROP' : 'BOSS DOWN!'}</div>
-        <div class="muted">${rest ? 'Patched up. Next boss incoming!' : 'Squad patched up: +40% HP, +15% ultimate. Your fight:'}</div>
+        <div class="muted">${rest ? 'Patched up. Next boss incoming!' : S.live.stage.nextPuzzle ? 'Next up: a RAID PUZZLE. Solve it together to heal and power up. Your fight:' : 'Squad patched up: +40% HP, +15% ultimate. Your fight:'}</div>
         ${rest ? '' : `<div class="clear-stats">
             <div class="panel"><div class="label">DAMAGE</div><div class="v gold">${fmtNum(d('dmg'))}</div></div>
             <div class="panel"><div class="label">RIGHT</div><div class="v">${d('correct')}/${d('correct') + d('wrong')}</div></div>
@@ -846,9 +853,10 @@ function effect(ev) {
         case 'domeBlock': if (S.bossR) S.bossR.release(); break;
         case 'bossDefeated': if (S.bossR) S.bossR.die(); break;
         case 'combo': if (ev.pid !== me) textPop(layer, `${ev.name}! (${by(ev.pid)})`, '#ff9d00', 2); break;
-        case 'synergy': if (ev.level === 4) { slam('FULL SYNERGY', { color: '#c45cff', sub: 'ALL FOUR CLASSES · ×1.5 DAMAGE' }); edge('#c45cff'); if (pub.status === 'alive') unlock('synergy'); } break;
+        case 'synergy': if (ev.level === 4) { slam('FULL SYNERGY', { color: '#c45cff', sub: 'ALL FOUR CLASSES · ×1.35 DAMAGE' }); edge('#c45cff'); if (pub.status === 'alive') unlock('synergy'); } break;
         case 'phase': slam(`BOSS ${ev.phase}!`, { color: ev.phase === 'DESPERATE' ? '#ff4757' : '#ffa502' }); break;
-        case 'enrage': slam('TIME\'S UP!', { color: '#ff4757', sub: 'THE BOSS IS ENRAGED' }); break;
+        case 'enrage': slam('TIME\'S UP!', { color: '#ff4757', sub: 'THE BOSS IS ENRAGED · FINISH IT FAST' }); break;
+        case 'enrageStack': slam('BOSS POWER RISING', { color: '#ff4757', sub: `IT NOW HITS FOR ${ev.dmg}% · FINISH IT!` }); edge('#ff2a3d'); break;
         case 'rally': slam('SPIRIT RALLY', { color: '#9fd0ff', sub: '+20% HP FOR EVERYONE' }); break;
         case 'wipe': slam('SQUAD WIPED', { color: '#ff4757' }); break;
         case 'hero': {
@@ -860,6 +868,17 @@ function effect(ev) {
             if ((ev.pids || []).includes(me)) { unlock('hero'); Audio.sfxAchievement(); }
             break;
         }
+        case 'puzzleReject': if (ev.pid === me) { toast(`Only ${CLASSES[ev.setter].name.toUpperCase()}S can enter slot ${ev.slot + 1}. Tell them!`); Audio.sfxWrong(); } break;
+        case 'puzzleStrike':
+            slam(ev.kind === 'vault' ? 'WRONG CODE!' : 'SURGE!', { color: '#ff4757', sub: `STRIKE ${ev.strikes} OF 3${ev.kind === 'reactor' ? ' · BACK TO STEP 1' : ''}` });
+            flash('#ff2a3d', 0.4); edge('#ff2a3d'); shake($('#g')); Audio.sfxWrong();
+            if (ev.pid === me) toast('That press was out of turn! Wait for your class to be called.');
+            break;
+        case 'reactorStep': if (ev.pid === me) { textPop(layer, '✓ STEP ' + ev.progress, '#ffd32a', 2.6); Audio.sfxCorrect(); } break;
+        case 'reactorRound': slam('ROUND 2', { color: '#ffd32a', sub: 'A LONGER SEQUENCE' }); break;
+        case 'vaultLocking': Audio.sfxCountdown(); break;
+        case 'puzzleSolved': slam('SOLVED!', { color: '#2ed573' }); confetti(120); edge('#2ed573'); Audio.sfxPuzzleSolve(); unlock('puzzle'); break;
+        case 'puzzleFailed': slam(ev.why === 'time' ? 'OUT OF TIME' : 'PUZZLE FAILED', { color: '#ff4757' }); edge('#ff2a3d'); Audio.sfxDefeat(); break;
         case 'rejected': if (ev.pid === me) { S.pred = null; toast({ 'no fight': 'Too late, that fight is over!', 'target is down': 'They went down. Pick someone else', 'target is out': 'They are out of lives', 'regrouping': 'Regrouping, hold on!' }[ev.reason] || 'That move didn\'t go through'); } break;
     }
 }

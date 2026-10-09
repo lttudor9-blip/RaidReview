@@ -82,3 +82,37 @@ of truth, harder to cheat, all game logic in one place.
    paste/CSV import and preview; Dark Zone launch preserved.
 5. **Balance + polish** — simulator-driven tuning, audio, accessibility, Chromebook perf.
 6. **Switch** — `next/` becomes the site root; old version archived in `legacy/`.
+
+## Milestone 3 notes: soundtrack, raid puzzles, balance
+
+**Soundtrack** (`next/js/audio.js`). Everything is synthesized in code: no files to load or license. The projector plays the music and student Chromebooks only play sound effects.
+- **Boss themes:** each boss has its own theme. Layers come in as the boss loses HP.
+- **Phase changes:** ENRAGED and DESPERATE arrive on the next bar, after a one-bar build.
+- **Stingers:** ultimates, combos, hero moments, boss kills and wipes trigger a hit that lands on the beat.
+- **Puzzle track:** a separate track whose ticking clock speeds up as time runs out.
+- **Listening and checking:** `npm run audio` renders demo clips to `tests/audio/out/` and prints loudness and clipping stats.
+
+**Raid puzzles** (`next/js/rules/puzzles.js`, `next/js/content/puzzles.js`). These are pure rules with tests in `tests/puzzles.test.mjs`.
+- **The Vault:** each class holds the clue for a slot that another class enters. A wrong code is a strike.
+- **Reactor Core:** only the intel class sees the order, and a wrong press resets the round.
+- **Failing:** three strikes, or the timer running out, fails the puzzle.
+- **Stakes:**
+
+  | Result | Effect |
+  | --- | --- |
+  | Solved | Full heal, plus a bonus against the next boss |
+  | Failed | No heal, and the next boss is tougher (`state.nextMods`, applied in `startBoss`) |
+
+**Balance.** The goal is that squads which talk to each other win and squads which don't, wipe. Run `npm run sim` (40 runs per scenario) to check. The current results:
+
+| Scenario | Difficulty | Win rate |
+| --- | --- | --- |
+| Good teamwork | Regular | ~100%, with the final boss close to its timer |
+| So-so teamwork | Regular | ~78% |
+| Poor teamwork | Regular | ~0% |
+| All Warriors | Regular | ~35% |
+| 6 students | Regular | ~80% |
+| Struggling class | Elementary | ~60% |
+| Strong class | Heroic | ~75% |
+
+Running out of time matters. The boss enrages when the timer ends, then gets stronger every 20 seconds.

@@ -45,7 +45,7 @@ export function abilityIcon(id, { size = 56, color = 'currentColor' } = {}) {
 
 // One-glance stat for each ability, shown big on its button
 export const ABILITY_STAT = {
-    strike: '900 DMG', cleave: '1,600 DMG', wrath: '6,000 DMG',
+    strike: '800 DMG', cleave: '1,400 DMG', wrath: '6,000 DMG',
     bash: '650 DMG', shield: 'BLOCKS 1 HIT', dome: '8s INVULNERABLE',
     jab: '550 DMG', heal: '+30% HP', hospital: 'HEAL ALL + REVIVE',
     disrupt: '750 DMG', expose: '+25% TEAM DMG', breach: 'STUN 10s'

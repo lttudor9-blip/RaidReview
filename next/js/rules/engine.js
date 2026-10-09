@@ -6,7 +6,7 @@
 // return events. `now` is a timestamp in ms; `rng` is a () => [0,1) function so
 // tests and the balance simulator can be deterministic.
 
-import { CLASSES, SYNERGY_WINDOW, SYNERGY_MULT, STREAK_BONUS, ULT_PER_CORRECT, ULT_PER_SUPPORT, SPIRIT_RALLY_PER_CORRECT } from '../content/classes.js';
+import { CLASSES, SYNERGY_WINDOW, SYNERGY_MULT, MONO_CLASS_PENALTY, STREAK_BONUS, ULT_PER_CORRECT, ULT_PER_SUPPORT, SPIRIT_RALLY_PER_CORRECT } from '../content/classes.js';
 import { BOSSES, PHASES, TIMER_ENRAGE, ROLE_CALL_REFLECT, INFECTION_SPREAD_MS, MIN_SCALING_PLAYERS, WIPE_REGROUP_MS, WIPE_BOSS_HEAL, RAID_LIVES, PLAYER_LIVES, DIFFICULTY } from '../content/raid.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -59,7 +59,8 @@ export function synergyLevel(state, now) {
     return Math.max(1, n);
 }
 export function synergyMult(state, now) {
-    return SYNERGY_MULT[synergyLevel(state, now)];
+    const classes = new Set(playersOf(state).map(p => p.cls)).size;
+    return SYNERGY_MULT[synergyLevel(state, now)] * (classes === 1 && playersOf(state).length > 1 ? MONO_CLASS_PENALTY : 1);
 }
 
 function streakBonus(p) {
@@ -157,7 +158,7 @@ export function act(state, pid, { ability, target } = {}, now) {
             } else if (ability === 'special' && exposed) {
                 base *= 1.5; crit = true;
             }
-            const mult = (1 + streakBonus(p)) * synergyMult(state, now) * (exposed ? 1 + b.exposeBonus : 1);
+            const mult = (1 + streakBonus(p)) * synergyMult(state, now) * (exposed ? 1 + b.exposeBonus : 1) * (b.mods?.dmg || 1);
             const amount = Math.round(base * mult);
             b.hp = Math.max(0, b.hp - amount);
             p.stats.dmg += amount;
@@ -325,7 +326,7 @@ function makeCall(state, roleCall, text) {
         const ofClass = alive.filter(p => p.cls === cls).length;
         if (!ofClass) cls = 'ANY';
         // a missing class makes the call harder, not easier: the whole squad has to cover for it
-        need = cls === 'ANY' ? clamp(Math.ceil(alive.length * 0.4), 1, 8) : clamp(Math.ceil(ofClass * 0.4), 1, 3);
+        need = cls === 'ANY' ? clamp(Math.ceil(alive.length * 0.75), 1, 16) : clamp(Math.ceil(ofClass * 0.4), 1, 3);
     }
     return { cls, need: Math.max(1, need), who: {}, done: false, text };
 }
@@ -337,20 +338,25 @@ export function startBoss(state, bossId, now) {
     if (!B) throw new Error(`unknown boss ${bossId}`);
     const d = difficultyOf(state);
     const n = Math.max(MIN_SCALING_PLAYERS, playersOf(state).length);
-    const maxHp = Math.round(B.hpPerPlayer * n * d.bossHp);
+    // a failed or solved raid puzzle leaves its mark on the next boss
+    const mods = { bossHp: 1, bossDmg: 1, dmg: 1, ...(state.nextMods || {}) };
+    state.nextMods = null;
+    // small rooms can't keep all four classes busy at once, so the boss is a little softer
+    const smallRoom = clamp(0.5 + n * 0.025, 0.65, 1);
+    const maxHp = Math.round(B.hpPerPlayer * n * smallRoom * d.bossHp * mods.bossHp);
     state.boss = {
         id: bossId, name: B.name, hp: maxHp, maxHp,
         phase: 'NORMAL', enraged: false,
-        startedAt: now, endsAt: now + B.timeLimit,
+        startedAt: now, endsAt: now + B.timeLimit * (d.time || 1),
         exposedUntil: 0, exposeBonus: 0, stunUntil: 0,
-        attack: null, cds: {}, defeatedAt: 0
+        attack: null, cds: {}, defeatedAt: 0, mods
     };
     B.attacks.forEach((a, i) => { state.boss.cds[a.id] = now + a.cooldown * 0.5 + i * 4000; });
     state.boss.telegraph = null;
     state.team.dome = 0;
     for (const p of playersOf(state)) { p.infected = 0; p.armed = false; }
     state.status = 'boss';
-    return [{ type: 'bossStart', boss: bossId, maxHp }];
+    return [{ type: 'bossStart', boss: bossId, maxHp, mods }];
 }
 
 function phaseFor(frac) {
@@ -381,21 +387,28 @@ function checkDefeat(state, now, ev, byPid) {
     }
 }
 
-function attackMult(state) {
+export function enrageStacks(b, now) {
+    return b.enraged && now > b.endsAt ? Math.floor((now - b.endsAt) / TIMER_ENRAGE.stackMs) : 0;
+}
+
+function attackMult(state, now) {
     const b = state.boss;
+    const st = enrageStacks(b, now);
     const ph = PHASES.find(p => p.id === b.phase);
     // small groups have fewer bodies to spread hits across, so the boss eases off
-    const smallRoom = clamp(0.55 + playersOf(state).length * 0.035, 0.6, 1);
+    const smallRoom = clamp(0.4 + playersOf(state).length * 0.03, 0.55, 1);
     return {
-        speed: ph.speed * (b.enraged ? TIMER_ENRAGE.speed : 1),
-        dmg: ph.dmg * (b.enraged ? TIMER_ENRAGE.dmg : 1) * difficultyOf(state).bossDmg * smallRoom
+        speed: ph.speed * (b.enraged ? TIMER_ENRAGE.speed * (1 + st * TIMER_ENRAGE.stackSpeed) : 1),
+        dmg: ph.dmg * (b.enraged ? TIMER_ENRAGE.dmg * (1 + st * TIMER_ENRAGE.stackDmg) : 1) * difficultyOf(state).bossDmg * smallRoom * (b.mods?.bossDmg || 1)
     };
 }
 
 function pickTargets(state, a, rng) {
     const alive = alivePlayers(state);
     if (a.kind === 'aoe') return alive.map(p => p.id);
-    const count = Math.min(alive.length, (a.targets || 1) + Math.floor(alive.length / 8));
+    // fewer targets in small rooms (a 6-person squad can't lose half its people to one hit)
+    const base = Math.max(1, Math.round((a.targets || 1) * Math.min(1, alive.length / 10)));
+    const count = Math.min(alive.length, base + Math.floor(alive.length / 8));
     if (a.kind === 'lowest') {
         return [...alive].sort((x, y) => x.hp / x.maxHp - y.hp / y.maxHp).slice(0, count).map(p => p.id);
     }
@@ -428,7 +441,7 @@ function resolveAttack(state, now, ev) {
     const b = state.boss;
     const atk = b.attack;
     const def = BOSSES[b.id].attacks.find(x => x.id === atk.id);
-    const m = attackMult(state);
+    const m = attackMult(state, now);
     b.attack = null;
     b.cds[atk.id] = now + def.cooldown / m.speed;
 
@@ -493,6 +506,8 @@ export function tick(state, now, rng = Math.random) {
     }
 
     if (!b.enraged && now >= b.endsAt) { b.enraged = true; ev.push({ type: 'enrage' }); }
+    const stacks = enrageStacks(b, now);
+    if (stacks > (b.stacks || 0)) { b.stacks = stacks; ev.push({ type: 'enrageStack', stacks, dmg: Math.round(TIMER_ENRAGE.dmg * (1 + stacks * TIMER_ENRAGE.stackDmg) * 100) }); }
 
     const lvl = synergyLevel(state, now);
     if (lvl !== state.team.synLevel) {
