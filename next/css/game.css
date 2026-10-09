@@ -1021,3 +1021,10 @@ body[data-screen="game"] .toasts { top: auto; bottom: 16px; left: auto; right: 1
 .end-live.mine { border-color: var(--gold); background: linear-gradient(180deg, rgba(255, 176, 32, 0.28), rgba(0, 0, 0, 0.6)); box-shadow: 0 0 60px rgba(255, 176, 32, 0.5); }
 .end-live .erank { font-family: var(--display); font-weight: 900; font-size: 5rem; line-height: 1; color: var(--rc); text-shadow: 0 0 40px var(--rc); animation: cerSlam 0.6s both; }
 .my-awards { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
+
+/* fair play: the projector checks each answer; a short "checking" beat */
+.answer.checking { border-color: #fff; animation: checking 0.6s ease-in-out infinite alternate; }
+@keyframes checking { from { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.0); } to { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.35); } }
+.vital { cursor: pointer; }
+.vital.flagged { outline: 2px solid #ffb020; }
+.glitch { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 99; padding: 10px 18px; border-radius: 12px; border: 2px solid var(--gold); background: #1a1200; color: var(--gold); font-family: var(--display); font-weight: 700; }

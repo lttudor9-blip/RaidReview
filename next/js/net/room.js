@@ -3,11 +3,12 @@
 // games/{code}
 //   v: 2
 //   meta      { title, difficulty, format, created, hostUid, locked, callsigns, shuffle }   host
-//   questions [ { text, answers[], correct, type } ]                                          host
+//   questions [ { text, answers[], type } ]   NO answer key: only the host knows it         host
 //   live      { status, stage, boss, team, raidLives, regroupUntil, paused, fx }             host
 //   kicked    { [pid]: true }                                                                host
 //   players/{pid}
 //     profile { name, cls, joinedAt }      student writes
+//     away    true while the Chromebook is disconnected (Firebase sets it on disconnect)
 //     intents { [key]: intent }            student writes, host deletes once applied
 //     pub     { hp, maxHp, lives, status, ult, cd, streak, armed, shield, infected, revive }   host
 //     stats   { dmg, heal, ... }           host
@@ -15,7 +16,7 @@
 //
 // Students only ever write inside their own players/{pid} node.
 
-import { dbGet, dbSet, dbUpdate, dbListen, removeOnDisconnect } from '../firebase.js';
+import { dbGet, dbSet, dbUpdate, dbListen, presence } from '../firebase.js';
 
 export const roomPath = code => `games/${code}`;
 
@@ -30,7 +31,9 @@ export async function createRoom({ hostUid, title, questions, settings }) {
         await dbSet(roomPath(code), {
             v: 2,
             meta: { title: title || 'Raid Review', created: Date.now(), hostUid: hostUid || null, ...settings },
-            questions,
+            // students get the questions without the answer key: the host checks
+            // every answer, so there's nothing on a Chromebook for a cheat script to read
+            questions: questions.map(({ text, answers, type }) => ({ text, answers, type: type || 'mc' })),
             live: { status: 'lobby' }
         });
         return code;
@@ -38,17 +41,18 @@ export async function createRoom({ hostUid, title, questions, settings }) {
     throw new Error('Could not find a free room code');
 }
 
-// A student keeps the same id for a room across page reloads, so a dropped
-// Chromebook can rejoin as itself.
+// A student keeps the same id for a room on this Chromebook, even after the tab
+// is closed or the Chromebook restarts, so a frozen screen can rejoin as itself.
+const pidKey = code => `rr2_pid_${code}`;
 export function playerIdFor(code) {
-    const key = `rr2_pid_${code}`;
     let pid = null;
-    try { pid = sessionStorage.getItem(key); } catch (e) { /* private mode */ }
-    if (!pid) {
-        pid = 'p' + Math.random().toString(36).slice(2, 10);
-        try { sessionStorage.setItem(key, pid); } catch (e) { /* private mode */ }
-    }
+    try { pid = localStorage.getItem(pidKey(code)) || sessionStorage.getItem(pidKey(code)); } catch (e) { /* storage blocked */ }
+    if (!pid) pid = 'p' + Math.random().toString(36).slice(2, 10);
+    rememberPid(code, pid);
     return pid;
+}
+function rememberPid(code, pid) {
+    try { localStorage.setItem(pidKey(code), pid); } catch (e) { /* storage blocked */ }
 }
 
 export async function lookupRoom(code) {
@@ -62,15 +66,25 @@ export async function joinRoom(code, pid, name) {
     const { room, error } = await lookupRoom(code);
     if (error) return { error };
     if (room.kicked && room.kicked[pid]) return { error: 'You were removed from this room.' };
-    const existing = room.players && room.players[pid];
-    if (room.meta.locked && !existing) return { error: 'This room is locked. Ask your teacher to unlock it.' };
+    let existing = room.players && room.players[pid] && room.players[pid].profile ? room.players[pid] : null;
     if (!existing) {
-        await dbSet(`${roomPath(code)}/players/${pid}/profile`, { name, cls: null, joinedAt: Date.now() });
-        // leaving the lobby before the raid starts frees the spot
-        if (room.live.status === 'lobby') removeOnDisconnect(`${roomPath(code)}/players/${pid}`);
+        // a different Chromebook (or cleared storage): typing the same name takes
+        // back your disconnected character, so nobody is ever locked out
+        const lower = name.toLowerCase();
+        const mine = Object.entries(room.players || {}).find(([id, n]) => n.away && n.profile?.name?.toLowerCase() === lower && !room.kicked?.[id]);
+        if (mine) { pid = mine[0]; existing = mine[1]; rememberPid(code, pid); }
     }
-    return { room, rejoined: !!existing };
+    if (room.meta.locked && !existing) return { error: 'This room is locked. If you were already in this raid, type the exact same name you used before.' };
+    if (!existing) await dbSet(`${roomPath(code)}/players/${pid}/profile`, { name, cls: null, joinedAt: Date.now() });
+    // while this Chromebook is connected `away` is cleared; if it drops, Firebase
+    // marks it away (the character stays in the raid, ready for the student to return)
+    presence(`${roomPath(code)}/players/${pid}/away`);
+    return { room, pid, rejoined: !!existing };
 }
+
+// Put a profile back if it went missing (e.g. an older version of the game
+// deleted it when the Chromebook dropped out)
+export const restoreProfile = (code, pid, profile) => dbSet(`${roomPath(code)}/players/${pid}/profile`, profile);
 
 export const chooseClass = (code, pid, cls) => dbSet(`${roomPath(code)}/players/${pid}/profile/cls`, cls);
 

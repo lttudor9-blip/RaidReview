@@ -12,6 +12,7 @@ import { AudioEngine as Audio } from '../audio.js';
 import { mount, esc, $, floater, flash, shake, fmtNum, fmtClock, pct, toast, setHTML, toggleFullscreen } from '../ui.js';
 import { renderResults } from './results.js';
 import { runCeremony } from './ceremony.js';
+import { createGuard, validIntent, allow, capBatch, cleanName, isFlagged, LIMITS } from '../rules/guard.js';
 import { crest } from '../content/crests.js';
 import { heroText, heroColor } from '../content/heroes.js';
 import { startPuzzle, puzzleInput, tickPuzzle, applyPuzzleOutcome } from '../rules/puzzles.js';
@@ -37,7 +38,8 @@ export async function startHost({ questions, title, hostUid }) {
         counts: {}, // event tally, for the end screen and debugging
         pfx: {},    // per-student effect channels
         callouts: {},
-        heroes: []  // hero moments, replayed on the results screen
+        heroes: [],  // hero moments, replayed on the results screen
+        guard: createGuard() // fair play: rate limits and bot checks on everything students send
     };
     H.engine = createRaid({ difficulty: H.settings.difficulty });
     H.code = await createRoom({ hostUid, title, questions, settings: H.settings });
@@ -71,48 +73,86 @@ function onRoom(H, room) {
     H.room = room;
     const players = room.players || {};
     const inLobby = !H.stage;
+    // a removed student's Chromebook can leave a scrap behind when it disconnects
+    for (const pid of Object.keys(room.kicked || {})) if (players[pid]) H.pending[`players/${pid}`] = null;
     // join / leave / class changes
     for (const [pid, node] of Object.entries(players)) {
         const prof = node.profile;
-        if (!prof || !prof.cls || !CLASSES[prof.cls]) continue;
+        if (!prof || !prof.cls || !CLASSES[prof.cls] || room.kicked?.[pid]) continue;
         const existing = H.engine.players[pid];
+        // in the lobby, a Chromebook that dropped out frees its spot until it comes back
+        if (inLobby && node.away) { if (existing) removePlayer(H.engine, pid); continue; }
         if (!existing) {
-            addPlayer(H.engine, pid, { name: displayName(H, pid, prof.name), cls: prof.cls });
+            if (Object.keys(H.engine.players).length >= LIMITS.maxPlayers) {
+                // a bot flood (or a mistyped code shared around the school): lock the doors
+                if (!H.settings.locked) {
+                    H.settings.locked = true;
+                    updateRoom(H.code, { 'meta/locked': true }).catch(() => {});
+                    const t = document.getElementById('t-lock'); if (t) t.checked = true;
+                    toast(`The room is full (${LIMITS.maxPlayers}), so the lobby locked itself`);
+                }
+                continue;
+            }
+            addPlayer(H.engine, pid, { name: displayName(H, pid, cleanName(prof.name)), cls: prof.cls });
             if (!inLobby) logFeed(H, `<b>${esc(H.engine.players[pid].name)}</b> joined the raid`);
         } else if (inLobby && existing.cls !== prof.cls) {
             removePlayer(H.engine, pid);
-            addPlayer(H.engine, pid, { name: displayName(H, pid, prof.name), cls: prof.cls });
+            addPlayer(H.engine, pid, { name: displayName(H, pid, cleanName(prof.name)), cls: prof.cls });
         }
     }
+    H.away = new Set(Object.entries(players).filter(([, n]) => n.away).map(([pid]) => pid));
     if (inLobby) {
         for (const pid of Object.keys(H.engine.players)) if (!players[pid]) removePlayer(H.engine, pid);
         renderLobbySquad(H);
     }
     // intents, oldest first
     for (const [pid, node] of Object.entries(players)) {
-        if (!node.intents) continue;
-        for (const key of Object.keys(node.intents).sort()) {
-            const id = pid + '/' + key;
-            if (H.processed.has(id)) continue;
-            H.processed.add(id);
-            H.pending[`players/${pid}/intents/${key}`] = null;
-            applyIntent(H, pid, node.intents[key]);
-        }
+        if (!node.intents || typeof node.intents !== 'object') continue;
+        const fresh = Object.keys(node.intents).sort().filter(key => !H.processed.has(pid + '/' + key));
+        for (const key of fresh) { H.processed.add(pid + '/' + key); H.pending[`players/${pid}/intents/${key}`] = null; }
+        const { keep, flagged } = capBatch(H.guard, pid, fresh);
+        if (flagged) flagPlayer(H, pid);
+        for (const key of keep) applyIntent(H, pid, node.intents[key]);
     }
+    if (H.answeredNow) { H.answeredNow = false; flush(H); } // answer results go back right away, not on the next tick
+}
+
+function kickPlayer(H, pid) {
+    updateRoom(H.code, { [`kicked/${pid}`]: true, [`players/${pid}`]: null }).catch(() => {});
+    removePlayer(H.engine, pid);
+    for (const k of Object.keys(H.last)) if (k.startsWith(`players/${pid}/`)) delete H.last[k];
+}
+
+// The fair-play referee caught this Chromebook doing something no student can
+function flagPlayer(H, pid) {
+    const p = H.engine.players[pid];
+    if (!p) return;
+    logFeed(H, `<b style="color:#ffb020">⚠ ${esc(p.name)}</b> is sending answers faster than a person can. Possible bot or auto-clicker`);
+    toast(`⚠ ${p.name}: possible bot or auto-clicker (click their name to remove)`);
 }
 
 function applyIntent(H, pid, it) {
     if (!it || !H.engine.players[pid] || H.ended) return;
+    if (!validIntent(it, { questions: H.questions, players: H.engine.players })) return;
     const now = Date.now();
+    const gate = allow(H.guard, pid, it, now);
+    if (gate.flagged) flagPlayer(H, pid);
     if (it.t === 'a') {
+        // Only the projector knows the answer key. It checks the answer and tells
+        // that one Chromebook the result (and the right answer when it's wrong).
+        H.answeredNow = true;
+        const n = it.n || null;
+        if (!gate.ok) return handle(H, [{ type: 'verdict', pid, n, rejected: 'Too fast! Read the question first.' }]);
+        if (H.stage?.kind === 'puzzle' || H.paused) return handle(H, [{ type: 'verdict', pid, n, rejected: 'Hold on…' }]);
         const q = H.questions[it.q];
-        if (!q) return;
         const correct = it.p === q.correct;
         logQuestion(H, pid, it.q, it.p, correct);
+        handle(H, [{ type: 'verdict', pid, n, q: it.q, correct, right: correct ? null : q.correct }]);
         handle(H, answer(H.engine, pid, correct, now));
+    } else if (!gate.ok) {
+        return;
     } else if (it.t === 'c') {
         // student callout: NEED HEALS / SHIELD ME / ULT READY
-        if (!['heal', 'shield', 'ult'].includes(it.k)) return;
         H.callouts[pid] = { k: it.k, at: now };
         logFeed(H, `<b>${nameOf(H, pid)}</b>: ${{ heal: 'NEED HEALS!', shield: 'SHIELD ME!', ult: 'ULTIMATE READY!' }[it.k]}`);
     } else if (it.t === 'v') {
@@ -175,7 +215,7 @@ function flush(H) {
     };
     for (const [k, v] of Object.entries(live)) setIfChanged(H, out, `live/${k}`, v);
     for (const p of Object.values(e.players)) {
-        const pub = { id: p.id, name: p.name, cls: p.cls, hp: p.hp, maxHp: p.maxHp, lives: p.lives, status: p.status, ult: p.ult, cd: p.cd, streak: p.streak, armed: p.armed, shield: p.shield, infected: p.infected, silenced: p.silenced || 0, revive: p.revive, callout: H.callouts[p.id] || null };
+        const pub = { id: p.id, name: p.name, cls: p.cls, hp: p.hp, maxHp: p.maxHp, lives: p.lives, status: p.status, ult: p.ult, cd: p.cd, streak: p.streak, armed: p.armed, shield: p.shield, infected: p.infected, silenced: p.silenced || 0, revive: p.revive, callout: H.callouts[p.id] || null, away: H.away?.has(p.id) || null };
         setIfChanged(H, out, `players/${p.id}/pub`, pub);
         setIfChanged(H, out, `players/${p.id}/stats`, p.stats);
         if (H.qlog[p.id]) setIfChanged(H, out, `players/${p.id}/qlog`, H.qlog[p.id]);
@@ -552,8 +592,7 @@ function renderLobby(H) {
     $('#squad').addEventListener('click', e => {
         const pid = e.target.dataset?.pid;
         if (pid && confirm(`Remove ${e.target.textContent} from the room?`)) {
-            updateRoom(H.code, { [`kicked/${pid}`]: true, [`players/${pid}`]: null });
-            removePlayer(H.engine, pid);
+            kickPlayer(H, pid);
             renderLobbySquad(H);
         }
     });
@@ -568,7 +607,7 @@ function renderLobbySquad(H) {
     setHTML(el, CLASS_IDS.map(c => {
         const list = ps.filter(p => p.cls === c);
         return `<div class="squad-col" data-cls="${c}"><div style="text-align:center;margin-bottom:6px">${crest(c, { size: 72, glow: list.length > 0 })}</div><h4><span>${CLASSES[c].name.toUpperCase()}S</span><span>${list.length}</span></h4>
-            <div class="names">${list.map(p => `<span data-pid="${p.id}" title="Click to remove" style="cursor:pointer">${esc(p.name)}</span>`).join('')}</div></div>`;
+            <div class="names">${list.map(p => `<span data-pid="${p.id}" title="Click to remove" style="cursor:pointer">${esc(p.name)}${isFlagged(H.guard, p.id) ? ' ⚠' : ''}</span>`).join('')}</div></div>`;
     }).join(''));
     const classes = new Set(ps.map(p => p.cls)).size;
     setHTML($('#ready-count'), `<b>${ps.length}</b> ready${waiting ? ` · ${waiting} choosing a class` : ''}${ps.length && classes < 4 ? ` · <span class="gold">only ${classes} of 4 classes — synergy needs all four</span>` : ''}`);
@@ -613,6 +652,11 @@ function renderFightScreen(H) {
         </div>
     </div>`);
     H.ui = { arena: $('#arena'), fx: $('#fx-layer'), feed: $('#feed'), bossBar: $('#boss-bar'), bossText: $('#boss-hp-text'), phase: $('#phase-chip'), timer: $('#timer'), rolecall: $('#rolecall'), weakspot: $('#weakspot'), warning: $('#warning'), pips: $('#syn-pips'), mult: $('#syn-mult'), vitals: $('#vitals'), lives: $('#raid-lives'), alive: $('#alive-count') };
+    // the teacher can remove a bot (or a student who left) mid-raid
+    H.ui.vitals.addEventListener('click', e => {
+        const v = e.target.closest('.vital'), p = v && H.engine.players[v.dataset.pid];
+        if (p && confirm(`Remove ${p.name} from the raid?`)) { kickPlayer(H, p.id); logFeed(H, `${esc(p.name)} was removed by the teacher`); }
+    });
     for (const html of H.feed.slice(-12)) { const d = document.createElement('div'); d.innerHTML = html; H.ui.feed.prepend(d); }
     if (H.boss) H.boss.destroy();
     H.boss = window.BossRenderer ? window.BossRenderer.create($('#boss-canvas'), H.stage.id) : null;
@@ -732,10 +776,10 @@ function renderFight(H, now) {
     ui.alive.textContent = `${ps.filter(p => p.status === 'alive').length}/${ps.length} UP`;
     setHTML(ui.lives, `RAID LIVES <span style="color:#ff4757;font-size:1.3rem">${'♥'.repeat(Math.max(0, e.raidLives))}</span>${e.team.dome > now ? ' · <span style="color:#4a6cff">DOME</span>' : ''}`);
     setHTML(ui.vitals, ps.sort((a, b2) => CLASS_IDS.indexOf(a.cls) - CLASS_IDS.indexOf(b2.cls)).map(p => `
-        <div class="vital ${p.status !== 'alive' ? p.status : ''} ${targets.has(p.id) && p.status === 'alive' ? 'targeted' : ''} ${p.infected && p.status === 'alive' ? 'infected' : ''}" data-cls="${p.cls}">
+        <div class="vital ${p.status !== 'alive' ? p.status : ''} ${targets.has(p.id) && p.status === 'alive' ? 'targeted' : ''} ${p.infected && p.status === 'alive' ? 'infected' : ''} ${isFlagged(H.guard, p.id) ? 'flagged' : ''}" data-cls="${p.cls}" data-pid="${p.id}" title="Click to remove from the raid">
             ${crest(p.cls, { size: 30 })}
             <div style="min-width:0"><div class="v-name">${esc(p.name)}</div><div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div></div>
-            <div class="v-tags">${H.callouts[p.id] && now - H.callouts[p.id].at < 8000 ? `<span class="callout-badge ${H.callouts[p.id].k}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[H.callouts[p.id].k]}</span>` : ''}${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.silenced > now && p.status === 'alive' ? '<span title="Silenced" style="color:#9fa8ff">🔇</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
+            <div class="v-tags">${isFlagged(H.guard, p.id) ? '<span title="Answering faster than a person can" style="color:#ffb020">⚠ BOT?</span>' : ''}${H.away?.has(p.id) ? '<span title="Chromebook disconnected" class="muted">📴</span>' : ''}${H.callouts[p.id] && now - H.callouts[p.id].at < 8000 ? `<span class="callout-badge ${H.callouts[p.id].k}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[H.callouts[p.id].k]}</span>` : ''}${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.silenced > now && p.status === 'alive' ? '<span title="Silenced" style="color:#9fa8ff">🔇</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
         </div>`).join(''));
 }
 

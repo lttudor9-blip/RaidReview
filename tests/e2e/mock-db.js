@@ -60,13 +60,34 @@ export const set = async (r, val) => apply({ t: 'set', path: r.path, val: clone(
 export const update = async (r, val) => apply({ t: 'update', path: r.path, val: clone(val) }, true);
 export const remove = async r => apply({ t: 'set', path: r.path, val: null }, true);
 export const get = async r => snap(clone(getAt(r.path)));
+// Connection state for this tab. __mockfb.drop() simulates a Chromebook losing
+// its connection: the server runs this tab's onDisconnect writes, then the tab
+// reconnects (as a real one does when the wifi comes back or the page reloads).
+let connected = true;
+const connListeners = new Set();
+const onDisc = [];
+const setConnected = v => { connected = v; for (const cb of connListeners) cb(snap(v)); };
+window.__mockfb.drop = () => {
+    setConnected(false);
+    for (const op of onDisc.splice(0)) apply(op, true);
+};
+window.__mockfb.reconnect = () => setConnected(true);
 export const onValue = (r, cb) => {
+    if (r.path === '.info/connected') {
+        connListeners.add(cb);
+        setTimeout(() => cb(snap(connected)), 0);
+        return () => connListeners.delete(cb);
+    }
     const l = { path: r.path, cb, last: undefined };
     listeners.add(l);
     setTimeout(() => { l.last = JSON.stringify(clone(getAt(r.path))); cb(snap(getAt(r.path))); }, 0);
     return () => listeners.delete(l);
 };
-export const onDisconnect = () => ({ remove: () => {}, set: () => {} });
+export const onDisconnect = r => ({
+    remove: async () => { onDisc.push({ t: 'set', path: r.path, val: null }); },
+    set: async v => { onDisc.push({ t: 'set', path: r.path, val: clone(v) }); },
+    cancel: async () => { for (let i = onDisc.length - 1; i >= 0; i--) if (onDisc[i].path === r.path) onDisc.splice(i, 1); }
+});
 export const runTransaction = async (r, fn) => {
     const v = fn(clone(getAt(r.path)));
     if (v !== undefined) apply({ t: 'set', path: r.path, val: v }, true);

@@ -48,6 +48,14 @@ const watch = (page, name) => {
     page.on('pageerror', e => errors.push(`[${name}] ${e.message}`));
     page.on('console', m => { if (m.type() === 'error' && !m.text().includes('ERR_FAILED')) errors.push(`[${name}] ${m.text().slice(0, 300)}`); });
 };
+// Each simulated student is its own Chromebook: the saved player id lives in
+// a per-device slot (real Chromebooks each have their own storage)
+const asDevice = (page, device) => page.addInitScript(d => {
+    const get = Storage.prototype.getItem, put = Storage.prototype.setItem;
+    const k = key => (String(key).startsWith('rr2_pid_') ? `${d}:${key}` : key);
+    Storage.prototype.getItem = function (key) { return get.call(this, k(key)); };
+    Storage.prototype.setItem = function (key, v) { return put.call(this, k(key), v); };
+}, device);
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, name + '.png') });
 
 // ---- host ----
@@ -62,7 +70,7 @@ console.log('room', code);
 const phone = { width: 1366, height: 768 }; // school Chromebook
 const students = [];
 for (let i = 0; i < 4; i++) {
-    const p = await ctx.newPage({ viewport: phone }); watch(p, CLASSES[i]);
+    const p = await ctx.newPage({ viewport: phone }); watch(p, CLASSES[i]); await asDevice(p, 'chromebook-' + i);
     await p.setViewportSize(phone);
     await p.goto(`http://raid.test/next/play.html?room=${code}&name=${NAMES[i]}`);
     await p.waitForSelector('.hs-card', { timeout: 10000 });
@@ -204,17 +212,20 @@ while (Date.now() - t0 < 6 * 60000) {
 // ---- end ceremony: every beat on the projector, played along on the Chromebooks ----
 const ceremony = { beats: [], winnerLit: false };
 await host.waitForSelector('#cer', { timeout: 15000 });
-for (let n = 0; n < 20 && await host.$('#cer'); n++) {
-    await sleep(1900); // past each beat's reveal
+// let it play by itself (as in class), screenshotting each beat as it arrives
+let lastStep = null, n = 0;
+const until = Date.now() + 90000;
+while (Date.now() < until && await host.$('#cer')) {
     const step = await host.evaluate(() => { const E = window.__rrHost.ending; return E && `${E.step}${E.step === 'award' ? E.shown : ''}`; });
     if (!step || step === 'results') break;
-    ceremony.beats.push(step);
-    await shot(host, `h19_ceremony_${n}_${step}`);
-    if (step === 'title' || step === 'rank') await shot(students[0], `s20_ceremony_${step}`);
-    if (step.startsWith('award')) {
-        for (const [i, p] of students.entries()) if (await p.$('.end-live.mine')) { ceremony.winnerLit = true; await shot(p, `s21_award_${step}_${CLASSES[i]}`); }
+    if (step !== lastStep) {
+        lastStep = step; ceremony.beats.push(step);
+        await sleep(1900); // past the beat's reveal
+        await shot(host, `h19_ceremony_${n++}_${step}`);
+        if (step === 'title' || step === 'rank') await shot(students[0], `s20_ceremony_${step}`);
+        if (step.startsWith('award')) for (const [i, p] of students.entries()) if (await p.$('.end-live.mine')) { ceremony.winnerLit = true; await shot(p, `s21_award_${step}_${CLASSES[i]}`); }
     }
-    await host.click('#cer-next');
+    await sleep(250);
 }
 await host.waitForSelector('.results', { timeout: 15000 });
 await sleep(800);

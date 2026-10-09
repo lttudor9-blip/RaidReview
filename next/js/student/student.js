@@ -6,7 +6,7 @@
 import { CLASSES, CLASS_IDS, SYNERGY_MULT, STREAK_BONUS } from '../content/classes.js';
 import { BOSSES, DIFFICULTY, ESHIELD_LEAK } from '../content/raid.js';
 import { questionDeck, shuffled } from '../content/questions.js';
-import { playerIdFor, joinRoom, chooseClass, sendIntent, listenRoom, lookupRoom } from '../net/room.js';
+import { playerIdFor, joinRoom, chooseClass, sendIntent, listenRoom, lookupRoom, restoreProfile } from '../net/room.js';
 import { AudioEngine as Audio } from '../audio.js';
 import { mount, esc, $, toast, flash, shake, fmtNum, pct, setHTML, toggleFullscreen } from '../ui.js';
 import { damageNumber, textPop, hitMarker, slam, streakName, unlock, unlockedList, ACHIEVEMENTS, achievementDesc, confetti } from './juice.js';
@@ -25,7 +25,18 @@ const S = {
 };
 
 export async function startStudent({ name, room }) {
-    window.__rrStudent = S; // handy for debugging from the console
+    // a glitch should never leave a student stuck: offer a one-tap rejoin
+    // (the Chromebook keeps its spot in the raid, so reloading is safe)
+    const glitch = () => {
+        if (document.getElementById('glitch')) return;
+        const b = document.createElement('button');
+        b.id = 'glitch'; b.className = 'glitch'; b.type = 'button';
+        b.textContent = '⟳ Screen stuck? Tap to rejoin';
+        b.onclick = () => location.reload();
+        document.body.appendChild(b);
+    };
+    window.addEventListener('error', glitch);
+    window.addEventListener('unhandledrejection', glitch);
     Audio.init();
     // full screen: a button on every screen before the game (the game has one in its top bar)
     const fs = document.createElement('button');
@@ -70,9 +81,13 @@ async function join(name, code) {
     S.pid = playerIdFor(code);
     const res = await joinRoom(code, S.pid, name);
     if (res.error) {
-        if (!document.getElementById('j-go')) renderJoin(name, code);
+        // joining from a link has no form yet: show it, with the reason
+        if (!document.getElementById('j-go')) { renderJoin(name, code); $('#j-err').textContent = res.error; }
         return res.error;
     }
+    S.pid = res.pid; // may be the character this student had before (rejoining by name)
+    S.name = name;
+    if (res.rejoined) toast('Welcome back! You\'re back in the raid.');
     S.questions = res.room.questions || [];
     S.deck = questionDeck(S.questions.length);
     listenRoom(code, onRoom);
@@ -87,7 +102,14 @@ function onRoom(room) {
     S.live = room.live || {};
     S.me = room.players?.[S.pid] || null;
     if (room.kicked?.[S.pid]) return show('kicked');
-    if (!S.me) return; // our node was removed (kicked) or not written yet
+    // our profile vanished (an older version of the game removed it when the
+    // Chromebook dropped out): put it back instead of freezing
+    if (!S.me?.profile && S.name && Date.now() - (S.restoredAt || 0) > 5000) {
+        S.restoredAt = Date.now();
+        restoreProfile(S.code, S.pid, { name: S.name, cls: S.cls || null, joinedAt: Date.now() }).catch(() => {});
+    }
+    if (!S.me) return; // not written yet
+    if (S.me.profile?.cls) S.cls = S.me.profile.cls;
     playFx();
 
     const cls = S.me.profile?.cls;
@@ -687,16 +709,35 @@ function drawQuestion(box) {
 
 function pick(k, btn) {
     Audio.ensureCtx();
-    const { i, q, order } = S.q;
-    const picked = order[k];
-    const correct = picked === q.correct;
+    const { i, order } = S.q;
+    const n = Math.random().toString(36).slice(2, 10);
+    S.local = 'feedback';
+    // the projector holds the answer key: it checks this and replies (verdict)
+    S.pending = { n, i, k, q: S.q, at: Date.now() };
+    sendIntent(S.code, S.pid, { t: 'a', q: i, p: order[k], n });
+    $('#g-ans').classList.add('locked');
+    btn.classList.add('picked', 'checking');
+    const mine = S.pending;
+    // no reply (connection dropped): let them answer again instead of hanging
+    setTimeout(() => {
+        if (S.pending !== mine) return;
+        S.pending = null;
+        if (S.q === mine.q && S.local === 'feedback') { S.local = 'question'; S.lastKey = null; drawControls(); toast('Connection hiccup: answer again'); }
+    }, 6000);
+}
+
+function verdict(ev) {
+    const P = S.pending;
+    if (!P || ev.n !== P.n) return;
+    S.pending = null;
+    if (S.q !== P.q || S.local !== 'feedback') return;
+    if (ev.rejected) { S.local = 'question'; S.lastKey = null; drawControls(); toast(ev.rejected); return; }
+    const correct = !!ev.correct, i = P.i, order = P.q.order;
     const pub = S.me.pub;
     const layer = $('#dmg-layer');
-    S.local = 'feedback';
-    sendIntent(S.code, S.pid, { t: 'a', q: i, p: picked });
     const grid = $('#g-ans');
-    grid.classList.add('locked');
-    btn.classList.add(correct ? 'right' : 'wrong');
+    const btn = grid?.children[P.k];
+    if (btn) { btn.classList.remove('checking'); btn.classList.add(correct ? 'right' : 'wrong'); }
     if (correct) {
         S.streak = (S.streak || 0) + 1;
         S.correctCount = (S.correctCount || 0) + 1;
@@ -711,19 +752,20 @@ function pick(k, btn) {
         if (S.correctCount >= 10) unlock('scholar');
         if (S.correctCount >= 25) unlock('brainiac');
         if (S.correctCount >= 50) unlock('encyclopedia');
-        if (Date.now() - (S.q.armedAt || S.q.shownAt) < 3000) unlock('quick');
+        if (P.at - (P.q.armedAt || P.q.shownAt) < 3000) unlock('quick');
         if (pub.status === 'alive' && pub.hp / pub.maxHp < 0.2) unlock('clutch');
         if (pub.status === 'out') unlock('spirit');
     } else {
         if ((S.streak || 0) >= 3) textPop(layer, 'STREAK LOST', '#ff6b81', 1.6);
         S.streak = 0;
-        grid.children[order.indexOf(q.correct)].classList.add('right'); // learn from the miss
-        S.myMissed[i] = (S.myMissed[i] || 0) + 1;
+        const rightBtn = grid?.children[order.indexOf(ev.right)];
+        if (rightBtn) rightBtn.classList.add('right'); // learn from the miss
+        S.myMissed[i] = { n: (S.myMissed[i]?.n || 0) + 1, right: ev.right };
         textPop(layer, 'WRONG', '#ff4757', 2.4);
         Audio.sfxWrong(); shake($('#g'));
     }
     const alive = pub.status === 'alive';
-    const answered = S.q;
+    const answered = P.q;
     setTimeout(() => {
         if (S.q !== answered || S.local !== 'feedback') return; // the screen moved on (puzzle, new stage) in the meantime
         S.q = null;
@@ -859,6 +901,7 @@ function effect(ev) {
     const by = id => esc(S.room.players?.[id]?.pub?.name || 'A teammate');
     S.counters ||= { shields: 0, heals: 0, revives: 0, exposes: 0, saves: 0 };
     switch (ev.type) {
+        case 'verdict': if (ev.pid === me) verdict(ev); break;
         case 'hit': if (ev.pid === me) {
             const legendary = !!ev.combo || ev.amount >= 8000;
             const predicted = S.pred && Date.now() - S.pred.at < 3000;
@@ -1019,7 +1062,7 @@ function renderEnd() {
     const pub = S.me?.pub, st = S.me?.stats;
     const won = S.live.status === 'victory';
     const acc = st ? Math.round((st.correct / Math.max(1, st.correct + st.wrong)) * 100) : 0;
-    const missed = Object.keys(S.myMissed).map(i => S.questions[i]).filter(Boolean);
+    const missed = Object.entries(S.myMissed).map(([i, m]) => S.questions[i] && { ...S.questions[i], right: m.right }).filter(Boolean);
     const achv = unlockedList();
     if (won) setTimeout(() => confetti(160), 300);
     S.endKey = null;
@@ -1036,6 +1079,6 @@ function renderEnd() {
         ${achv.length ? `<div class="panel" style="width:min(520px,100%);margin-top:12px;text-align:left"><div class="label" style="margin-bottom:6px">ACHIEVEMENTS · ${achv.length} OF ${Object.keys(ACHIEVEMENTS).length}</div>
             ${achv.map(id => `<div style="padding:6px 0;border-top:1px solid var(--line)">🏆 <b class="gold">${ACHIEVEMENTS[id]}</b> <span class="muted">· ${esc(achievementDesc(id))}</span></div>`).join('')}</div>` : ''}
         ${missed.length ? `<div class="panel" style="width:min(520px,100%);margin-top:12px;text-align:left"><div class="label" style="margin-bottom:6px">REVIEW THESE</div>
-            ${missed.map(q => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${esc(q.text)}</b><div style="color:#2ed573">${esc(q.answers[q.correct])}</div></div>`).join('')}</div>` : ''}
+            ${missed.map(q => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${esc(q.text)}</b><div style="color:#2ed573">${esc(q.answers[q.right] ?? '')}</div></div>`).join('')}</div>` : ''}
     </div>`);
 }

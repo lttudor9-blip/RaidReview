@@ -8,6 +8,7 @@
     "e2e": "node tests/e2e/raid.e2e.mjs",
     "e2e:site": "node tests/e2e/site.e2e.mjs",
     "e2e:layout": "node tests/e2e/layout.e2e.mjs",
+    "e2e:fairplay": "node tests/e2e/fairplay.e2e.mjs",
     "audio": "node tests/audio/render.mjs"
   },
   "devDependencies": {

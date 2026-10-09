@@ -27,8 +27,13 @@ export const dbRemove = path => remove(ref(db, path));
 export function dbListen(path, cb) {
     return onValue(ref(db, path), s => cb(s.val()));
 }
-export function removeOnDisconnect(path) {
-    onDisconnect(ref(db, path)).remove();
+// Presence: `path` is true while this device is disconnected and cleared while
+// it's connected. Re-armed on every reconnect (a wifi blip, a sleeping lid).
+export function presence(path) {
+    return onValue(ref(db, '.info/connected'), s => {
+        if (s.val() !== true) return;
+        onDisconnect(ref(db, path)).set(true).then(() => set(ref(db, path), null)).catch(() => {});
+    });
 }
 
 // Resolves with the signed-in teacher, or null if nobody signs in within `ms`.
