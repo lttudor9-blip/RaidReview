@@ -83,7 +83,7 @@ export function answer(state, pid, correct, now) {
         p.stats.bestStreak = Math.max(p.stats.bestStreak, p.streak);
         if (p.status === 'alive') {
             p.armed = true;
-            p.ult = Math.min(100, p.ult + ULT_PER_CORRECT);
+            if (!p.infected) p.ult = Math.min(100, p.ult + ULT_PER_CORRECT); // the virus jams your ultimate
             if (p.cd > 0) p.cd--;
         } else if (p.status === 'down') {
             p.revive++;
@@ -248,6 +248,7 @@ export function act(state, pid, { ability, target } = {}, now) {
     if (ability === 'ult') { p.ult = 0; p.stats.ults++; ev.push({ type: 'ult', pid, name: ab.name }); }
 
     countRoleCall(state, p, ability, ev);
+    if (ability === 'ult') countLastStand(state, p, now, ev);
     checkPhase(state, ev);
     checkDefeat(state, now, ev, pid);
     return ev;
@@ -279,7 +280,7 @@ function damagePlayer(state, p, amount, ev, source) {
         if (by) state.players[by].stats.saves++;
         p.shield = false; p.shieldBy = null;
         ev.push({ type: 'shieldBlock', pid: p.id, source, by, amount });
-        return;
+        return 'blocked';
     }
     p.hp -= amount;
     ev.push({ type: 'playerHit', pid: p.id, amount, source });
@@ -465,27 +466,110 @@ function resolveAttack(state, now, ev) {
     for (const pid of atk.targets) {
         const p = state.players[pid];
         if (!p) continue;
-        damagePlayer(state, p, Math.round(p.maxHp * def.dmg * m.dmg), ev, atk.id);
-        if (atk.kind === 'infect' && p.status === 'alive') {
-            p.infected = now + INFECTION_SPREAD_MS;
+        const blocked = damagePlayer(state, p, Math.round(p.maxHp * def.dmg * m.dmg), ev, atk.id) === 'blocked';
+        if (atk.kind === 'infect' && p.status === 'alive' && !blocked && !p.infected) {
+            p.infected = now + virusOf(b).spreadMs;
             ev.push({ type: 'infected', pid });
         }
     }
 }
 
+const DEFAULT_VIRUS = { spreadMs: INFECTION_SPREAD_MS, dmg: 0.08, overloadShare: 0.5, overloadDmg: 0.2, overloadCd: 25000 };
+const virusOf = b => ({ ...DEFAULT_VIRUS, ...(BOSSES[b.id]?.virus || {}) });
+
+// The virus bites its host and jumps to someone new. A Guardian shield on the
+// next victim stops it cold (quarantine). If too much of the squad is infected
+// at once, the boss triggers a SYSTEM OVERLOAD on everyone.
 function tickInfection(state, now, rng, ev) {
+    const b = state.boss, V = virusOf(b);
     for (const p of alivePlayers(state)) {
         if (!p.infected || now < p.infected) continue;
-        // the virus bites its host and jumps to someone new
-        damagePlayer(state, p, Math.round(p.maxHp * 0.08), ev, 'virus');
-        if (p.status === 'alive') p.infected = now + INFECTION_SPREAD_MS;
-        const clean = alivePlayers(state).filter(x => !x.infected);
-        if (clean.length) {
-            const v = clean[Math.floor(rng() * clean.length)];
-            v.infected = now + INFECTION_SPREAD_MS;
+        damagePlayer(state, p, Math.round(p.maxHp * V.dmg), ev, 'virus');
+        if (p.status === 'alive') p.infected = now + V.spreadMs;
+        const clean = alivePlayers(state).filter(x => !x.infected && x.id !== p.id);
+        if (!clean.length) continue;
+        const v = clean[Math.floor(rng() * clean.length)];
+        if (v.shield) {
+            const by = v.shieldBy && v.shieldBy !== v.id && state.players[v.shieldBy] ? v.shieldBy : null;
+            if (by) state.players[by].stats.saves++;
+            v.shield = false; v.shieldBy = null;
+            ev.push({ type: 'quarantine', pid: v.id, from: p.id, by });
+        } else {
+            v.infected = now + V.spreadMs;
             ev.push({ type: 'infectionSpread', from: p.id, pid: v.id });
         }
     }
+    const alive = alivePlayers(state);
+    const sick = alive.filter(p => p.infected).length;
+    if (alive.length >= 2 && sick >= Math.max(2, Math.ceil(alive.length * V.overloadShare)) && now >= (b.overloadAt || 0)) {
+        b.overloadAt = now + V.overloadCd;
+        ev.push({ type: 'overload', infected: sick });
+        if (state.team.dome > now) { ev.push({ type: 'domeBlock', attack: 'overload' }); return; }
+        const m = attackMult(state, now);
+        for (const p of alive) damagePlayer(state, p, Math.round(p.maxHp * V.overloadDmg * m.dmg), ev, 'overload');
+    }
+}
+
+// ---------------------------------------------------------------- scripted beats
+
+function tickBeats(state, now, ev) {
+    const b = state.boss;
+    const beats = BOSSES[b.id].beats || [];
+    b.beatsDone ||= {};
+    const frac = b.hp / b.maxHp;
+    beats.forEach((beat, i) => {
+        if (b.beatsDone[i] || frac > beat.at) return;
+        b.beatsDone[i] = true;
+        if (beat.kind === 'stagger') {
+            b.attack = null; b.telegraph = null;
+            b.stunUntil = now + beat.stun;
+            b.exposedUntil = now + beat.expose;
+            b.exposeBonus = CLASSES.TACTICIAN.abilities.special.bonus;
+            b.exposedBy = null;
+            ev.push({ type: 'stagger', until: b.stunUntil, text: beat.text });
+        } else if (beat.kind === 'force') {
+            b.cds[beat.attack] = now;
+            b.attack = null; b.telegraph = null; b.stunUntil = 0;
+            ev.push({ type: 'bossBeat', text: beat.text });
+        } else if (beat.kind === 'lastStand') {
+            const classes = [...new Set(alivePlayers(state).map(p => p.cls))];
+            for (const p of alivePlayers(state)) p.ult = 100; // the boss's overload surges every ultimate to full
+            b.attack = null; b.telegraph = null;
+            b.lastStand = { endsAt: now + beat.ms, startedAt: now, need: classes, who: {}, dmg: beat.dmg, done: false };
+            ev.push({ type: 'lastStand', endsAt: b.lastStand.endsAt, need: classes, text: beat.text });
+        }
+    });
+}
+
+function countLastStand(state, p, now, ev) {
+    const ls = state.boss?.lastStand;
+    if (!ls || ls.done || now > ls.endsAt || !ls.need.includes(p.cls) || ls.who[p.cls]) return;
+    ls.who[p.cls] = p.id;
+    ev.push({ type: 'lastStandProgress', pid: p.id, cls: p.cls, have: Object.keys(ls.who).length, need: ls.need.length });
+    if (ls.need.every(c => ls.who[c])) {
+        const b = state.boss;
+        ls.done = true;
+        const dmg = Math.round(b.maxHp * 0.1);
+        b.hp = Math.max(0, b.hp - dmg);
+        b.stunUntil = now + 8000;
+        b.exposedUntil = now + 12000; b.exposeBonus = 0.4; b.exposedBy = null;
+        ev.push({ type: 'lastStandWon', amount: dmg });
+        ev.push({ type: 'hero', kind: 'lastStandSquad', pids: Object.values(ls.who) });
+    }
+}
+
+function resolveLastStand(state, now, ev) {
+    const b = state.boss, ls = b.lastStand;
+    if (ls.done) { b.lastStand = null; return; }
+    b.lastStand = null;
+    ev.push({ type: 'lastStandFailed' });
+    if (state.team.dome > now) {
+        ev.push({ type: 'domeBlock', attack: 'annihilation' });
+        if (state.players[state.team.domeBy]) ev.push({ type: 'hero', kind: 'domeSave', pids: [state.team.domeBy], attack: 'ANNIHILATION' });
+        return;
+    }
+    const m = attackMult(state, now);
+    for (const p of alivePlayers(state)) damagePlayer(state, p, Math.round(p.maxHp * ls.dmg * m.dmg), ev, 'annihilation');
 }
 
 // Advance the boss fight to `now`. Call about 4 times a second.
@@ -516,8 +600,12 @@ export function tick(state, now, rng = Math.random) {
     }
 
     tickInfection(state, now, rng, ev);
+    tickBeats(state, now, ev);
 
-    if (b.attack) {
+    if (b.lastStand) {
+        // the boss is charging: no other attacks until the countdown resolves
+        if (b.lastStand.done || now >= b.lastStand.endsAt) resolveLastStand(state, now, ev);
+    } else if (b.attack) {
         if (now >= b.attack.landsAt) resolveAttack(state, now, ev);
     } else if (now >= b.stunUntil) {
         const attacks = BOSSES[b.id].attacks;
@@ -581,8 +669,60 @@ export function shiftTime(state, dt) {
         for (const k of Object.keys(b.cds)) b.cds[k] += dt;
         if (b.attack) { b.attack.startedAt += dt; b.attack.landsAt += dt; }
     }
+    if (b?.lastStand) b.lastStand.endsAt += dt;
+    if (b?.overloadAt) b.overloadAt += dt;
     if (state.team.dome) state.team.dome += dt;
     if (state.regroupUntil) state.regroupUntil += dt;
     for (const k of Object.keys(state.team.syn)) state.team.syn[k] += dt;
     for (const p of playersOf(state)) if (p.infected) p.infected += dt;
+}
+
+// ---------------------------------------------------------------- chaos mode (teacher)
+
+// The teacher's toolbar during a fight. Each tool has its own cooldown so it
+// can be used again and again, but not spammed.
+export const CHAOS = {
+    meteor: { cd: 40000, label: 'METEOR STRIKE', desc: '20% damage to the whole squad' },
+    drain: { cd: 40000, label: 'SHIELD DRAIN', desc: 'Strip every shield' },
+    patient: { cd: 40000, label: 'PATIENT ZERO', desc: 'Infect a random student' },
+    reward: { cd: 12000, label: 'REWARD', desc: '+35% ultimate for one class' },
+    strike: { cd: 60000, label: 'AIR STRIKE', desc: '6% damage to the boss' },
+    rally: { cd: 60000, label: 'SUPPLY DROP', desc: '+25% ultimate for everyone' }
+};
+
+export function chaosReady(state, kind, now) {
+    return now >= ((state.team.chaos || {})[kind] || 0);
+}
+
+export function chaos(state, kind, now, { cls } = {}, rng = Math.random) {
+    const b = state.boss;
+    if (!CHAOS[kind] || state.status !== 'boss' || !b || b.defeatedAt || state.regroupUntil > now) return [];
+    if (!chaosReady(state, kind, now)) return [];
+    state.team.chaos = { ...(state.team.chaos || {}), [kind]: now + CHAOS[kind].cd };
+    const ev = [{ type: 'chaos', kind, cls: cls || null }];
+    const alive = alivePlayers(state);
+    if (kind === 'meteor') {
+        for (const p of alive) damagePlayer(state, p, Math.round(p.maxHp * 0.2), ev, 'meteor');
+    } else if (kind === 'drain') {
+        for (const p of alive) { p.shield = false; p.shieldBy = null; }
+    } else if (kind === 'patient') {
+        const clean = alive.filter(p => !p.infected);
+        if (clean.length) {
+            const v = clean[Math.floor(rng() * clean.length)];
+            v.infected = now + virusOf(b).spreadMs;
+            ev.push({ type: 'infected', pid: v.id });
+        }
+    } else if (kind === 'reward') {
+        if (!CLASSES[cls]) return [];
+        for (const p of alive.filter(p => p.cls === cls)) p.ult = Math.min(100, p.ult + 35);
+        ev.push({ type: 'teacherReward', cls });
+    } else if (kind === 'strike') {
+        const amount = Math.round(b.maxHp * 0.06);
+        b.hp = Math.max(1, b.hp - amount);
+        ev.push({ type: 'hit', pid: null, amount, crit: true, ability: 'ult' });
+        checkPhase(state, ev);
+    } else if (kind === 'rally') {
+        for (const p of alive) p.ult = Math.min(100, p.ult + 25);
+    }
+    return ev;
 }

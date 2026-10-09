@@ -501,6 +501,13 @@ function banners(now) {
     } else if (pub.status === 'out') {
         out.push(`<div class="banner" style="--bc:#9fd0ff">👻 SPIRIT MODE: your right answers power the team rally <span class="bt">${S.live.team?.rally || 0}%</span></div>`);
     }
+    const ls = b?.lastStand;
+    if (ls && !ls.done && inFight() && pub.status === 'alive') {
+        out.push(ls.who[pub.cls]
+            ? `<div class="banner big" style="--bc:#2ed573">✔ ${clsName}S FIRED! Hold on: ${ls.need.filter(c => !ls.who[c]).map(c => CLASSES[c].name.toUpperCase() + 'S').join(', ') || 'everyone'} still needed <span class="bt">${secs(ls.endsAt)}s</span></div>`
+            : `<div class="banner big danger">LAST STAND! ${clsName}S: ANSWER, THEN FIRE YOUR ULTIMATE! <span class="bt">${secs(ls.endsAt)}s</span></div>`);
+    }
+    if (b && b.stunUntil > now && !ls && inFight() && !atk) out.push(`<div class="banner big" style="--bc:#ffb020">BOSS STAGGERED: EVERY CLASS HIT IT NOW! <span class="bt">${secs(b.stunUntil)}s</span></div>`);
     if (atk && inFight()) {
         if (call && !call.done && call.cls === pub.cls) out.push(`<div class="banner big" style="--bc:${CLASSES[pub.cls].color}">BOSS CALLS ${clsName}S! Answer, then hit ${esc(CLASSES[pub.cls].abilities.special.name.toUpperCase())} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
         else if (call && !call.done && call.cls === 'ALL' && !call.who[pub.cls]) out.push(`<div class="banner big" style="--bc:#ffa502">EVERY CLASS NEEDED: ${clsName}S HAVEN'T ACTED YET! <span class="bt">${secs(atk.landsAt)}s</span></div>`);
@@ -510,7 +517,7 @@ function banners(now) {
             out.push(`<div class="banner big danger">⚠ YOU'RE TARGETED: ${esc(atk.name)}${pub.shield ? ' (your shield will block it)' : ' — Guardians can shield you!'} <span class="bt">${secs(atk.landsAt)}s</span></div>`);
         } else if (!call) out.push(`<div class="banner danger">⚠ ${esc(atk.name)} INCOMING <span class="bt">${secs(atk.landsAt)}s</span></div>`);
     }
-    if (pub.infected && pub.status === 'alive') out.push(`<div class="banner" style="--bc:#7bed9f">☣ INFECTED: it spreads soon. Ask a Medic to heal you! <span class="bt">${secs(pub.infected)}s</span></div>`);
+    if (pub.infected && pub.status === 'alive') out.push(`<div class="banner big" style="--bc:#7bed9f">☣ INFECTED: your ultimate is jammed and it spreads in <span class="bt">${secs(pub.infected)}s</span> — MEDIC! Guardians: shield the healthy to quarantine.</div>`);
     if (S.live.team?.dome > now) out.push(`<div class="banner" style="--bc:${CLASSES.GUARDIAN.color}">◆ IRON DOME: the squad is invulnerable <span class="bt">${secs(S.live.team.dome)}s</span></div>`);
     if (b && b.exposedUntil > now && pub.cls !== 'WARRIOR') out.push(`<div class="banner" style="--bc:${CLASSES.TACTICIAN.color}">BOSS EXPOSED: everyone deals +25% <span class="bt">${secs(b.exposedUntil)}s</span></div>`);
     return out.slice(0, 3).join('');
@@ -857,6 +864,23 @@ function effect(ev) {
         case 'combo': if (ev.pid !== me) textPop(layer, `${ev.name}! (${by(ev.pid)})`, '#ff9d00', 2); break;
         case 'synergy': if (ev.level === 4) { slam('FULL SYNERGY', { color: '#c45cff', sub: 'ALL FOUR CLASSES · ×1.35 DAMAGE' }); edge('#c45cff'); if (pub.status === 'alive') unlock('synergy'); } break;
         case 'phase': slam(`BOSS ${ev.phase}!`, { color: ev.phase === 'DESPERATE' ? '#ff4757' : '#ffa502' }); break;
+        case 'stagger': slam('STAGGERED!', { color: '#ffb020', sub: 'EVERY CLASS: HIT IT NOW FOR FULL SYNERGY' }); edge('#ffb020'); break;
+        case 'bossBeat': slam('PHASE 2', { color: '#ff4757', sub: esc(ev.text || '') }); edge('#ff2a3d'); break;
+        case 'lastStand': slam('LAST STAND!', { color: '#ff2a3d', sub: 'ULTIMATES CHARGED · EVERY CLASS MUST FIRE' }); edge('#ffb020'); navigator.vibrate && navigator.vibrate([200, 80, 200]); S.lastKey = null; break;
+        case 'lastStandProgress': if (ev.pid === me) textPop(layer, '✔ YOUR CLASS FIRED!', '#ffb020', 2.8); break;
+        case 'lastStandWon': slam('ANNIHILATION STOPPED!', { color: '#2ed573', sub: `${fmtNum(ev.amount)} DAMAGE · BOSS STUNNED` }); confetti(80); break;
+        case 'lastStandFailed': slam('ANNIHILATION', { color: '#ff2a3d', sub: 'NOT EVERY CLASS FIRED IN TIME' }); flash('#ff2a3d', 0.6); shake($('#g')); break;
+        case 'quarantine': if (ev.pid === me) { slam('QUARANTINED!', { color: '#7d95ff', sub: 'A SHIELD BLOCKED THE VIRUS' }); } else if (ev.by === me) { slam('QUARANTINE!', { color: '#7d95ff', sub: 'YOUR SHIELD STOPPED THE VIRUS' }); unlock('save'); } break;
+        case 'overload': slam('SYSTEM OVERLOAD!', { color: '#7bed9f', sub: `${ev.infected} INFECTED · MEDICS, CURE THEM!` }); flash('#2ed573', 0.35); break;
+        case 'chaos': {
+            const t = { meteor: ['METEOR STRIKE!', '#ff4757', 'YOUR TEACHER CALLED IT IN'], drain: ['SHIELD DRAIN!', '#4a6cff', 'EVERY SHIELD IS GONE'], patient: ['PATIENT ZERO!', '#7bed9f', 'SOMEONE JUST GOT INFECTED'], strike: ['AIR STRIKE!', '#ffb020', 'TEACHER SUPPORT INBOUND'], rally: ['SUPPLY DROP!', '#ffb020', '+25% ULTIMATE FOR EVERYONE'] }[ev.kind];
+            if (t) { slam(t[0], { color: t[1], sub: t[2] }); edge(t[1]); if (ev.kind === 'meteor' || ev.kind === 'drain') shake($('#g')); }
+            break;
+        }
+        case 'teacherReward':
+            if (ev.cls === pub.cls) { slam('TEACHER BONUS!', { color: '#ffb020', sub: `${CLASSES[ev.cls].name.toUpperCase()}S +35% ULTIMATE` }); edge('#ffb020'); confetti(40); }
+            else textPop(layer, `TEACHER BONUS: ${CLASSES[ev.cls].name.toUpperCase()}S`, '#ffb020', 2);
+            break;
         case 'enrage': slam('TIME\'S UP!', { color: '#ff4757', sub: 'THE BOSS IS ENRAGED · FINISH IT FAST' }); break;
         case 'enrageStack': slam('BOSS POWER RISING', { color: '#ff4757', sub: `IT NOW HITS FOR ${ev.dmg}% · FINISH IT!` }); edge('#ff2a3d'); break;
         case 'rally': slam('SPIRIT RALLY', { color: '#9fd0ff', sub: '+20% HP FOR EVERYONE' }); break;

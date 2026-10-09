@@ -83,7 +83,7 @@ await sleep(800);
 await shot(host, 'h01_lobby');
 
 // standard format: 3 bosses and both raid puzzles (fights are sped up below)
-await host.click('#seg-format [data-v="standard"]');
+await host.click('#seg-format [data-v="full"]');
 await host.click('#btn-start');
 await sleep(2500);
 await shot(host, 'h02_boss_intro');
@@ -159,7 +159,7 @@ while (Date.now() - t0 < 6 * 60000) {
         if (shots.stuAction && !shots.stuHit && r.startsWith('act') && i === 0) { await sleep(350); await shot(p, 's04b_damage_number'); shots.stuHit = true; }
         if (!shots.stuTarget && i === 2 && await p.$('.sq-card.targetable')) { await shot(p, 's04c_targeting'); shots.stuTarget = true; }
     }
-    const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, puzzles: H.engine.puzzleLog, boss: H.engine.boss && { hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call } }; });
+    const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, puzzles: H.engine.puzzleLog, boss: H.engine.boss && { id: H.engine.boss.id, hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call, lastStand: !!(H.engine.boss.lastStand && !H.engine.boss.lastStand.done), stunned: H.engine.boss.stunUntil > Date.now() } }; });
     if (state.heroes > shots.hero && shots.hero < 2) { shots.hero = state.heroes; await sleep(500); await shot(host, `h06_hero_${shots.hero}`); await shot(students[0], `s08_hero_${shots.hero}`); }
     if (state.ended) break;
     if (state.stage?.kind === 'puzzle') {
@@ -173,12 +173,21 @@ while (Date.now() - t0 < 6 * 60000) {
     if (!shots.reveal && await students[0].$('.class-reveal')) { await shot(students[0], 's00_class_reveal'); shots.reveal = true; }
     if (!shots.fight && state.stage?.phase === 'fight') { await sleep(400); await shot(host, 'h03_fight'); shots.fight = true; fightStart.t = Date.now(); }
     if (!shots.classes && fightStart.t && Date.now() - fightStart.t > 9000) { for (const [i, p] of students.entries()) await shot(p, `s07_${CLASSES[i]}`); shots.classes = true; }
+    // chaos mode: the teacher drops a meteor and rewards the Medics
+    if (state.stage?.phase === 'fight' && shots.classes && !shots.chaos) {
+        shots.chaos = true;
+        await host.click('[data-chaos="meteor"]'); await sleep(250);
+        await host.click('[data-reward="MEDIC"]'); await sleep(500);
+        await shot(host, 'h12_chaos'); await shot(students[2], 's13_chaos_medic');
+    }
+    if (state.boss?.stunned && state.boss.id === 'raider' && !shots.stagger) { shots.stagger = true; await sleep(300); await shot(host, 'h14_stagger'); await shot(students[0], 's14_stagger'); }
+    if (state.boss?.lastStand && !shots.lastStand) { shots.lastStand = true; await sleep(300); await shot(host, 'h13_laststand'); await shot(students[1], 's15_laststand'); }
     if (state.boss?.call && !shots.rolecall) { await shot(host, 'h04_rolecall'); shots.rolecall = true; }
     if (state.boss?.call && !shots.stuCall) {
         for (const [i, p] of students.entries()) if (await p.$('.callout.mine')) { await shot(p, `s05_rolecall_${CLASSES[i]}`); shots.stuCall = true; break; }
     }
     // keep the run short: once each fight has shown a role call, speed the boss toward defeat
-    if (state.stage?.phase === 'fight' && shots.rolecall && shots.classes && state.boss && state.boss.hp > state.boss.max * 0.05) {
+    if (state.stage?.phase === 'fight' && shots.rolecall && shots.classes && state.boss && !state.boss.lastStand && state.boss.hp > state.boss.max * 0.05) {
         await host.evaluate(() => { const b = window.__rrHost.engine.boss; b.hp = Math.max(1, b.hp - b.maxHp * 0.04); });
     }
     await sleep(350);
@@ -188,7 +197,7 @@ await shot(host, 'h05_results');
 await host.locator('.panel', { hasText: 'MOST MISSED' }).first().screenshot({ path: path.join(OUT, 'h11_reteach.png') }).catch(() => {});
 await shot(students[0], 's06_end');
 
-const final = await host.evaluate(() => { const H = window.__rrHost; const f = H.feed.join('\n'); return { puzzles: H.engine.puzzleLog, events: H.counts, secs: Math.round((Date.now() - performance.timeOrigin) / 1000), ended: H.ended, status: H.engine.status, stageIdx: H.stageIdx, players: Object.values(H.engine.players).map(p => ({ cls: p.cls, ...p.stats })) }; });
+const final = await host.evaluate(() => { const H = window.__rrHost; window.__beats = H.counts; const f = H.feed.join('\n'); return { puzzles: H.engine.puzzleLog, events: H.counts, secs: Math.round((Date.now() - performance.timeOrigin) / 1000), ended: H.ended, status: H.engine.status, stageIdx: H.stageIdx, players: Object.values(H.engine.players).map(p => ({ cls: p.cls, ...p.stats })) }; });
 console.log('bot actions:', JSON.stringify(counts));
 console.log('final:', JSON.stringify(final));
 console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no page errors');

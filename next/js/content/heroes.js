@@ -1,7 +1,7 @@
 // Hero moments: the plays a class will talk about after the bell.
 // The engine detects them; this turns one into words for the projector and Chromebooks.
 
-const COLORS = { squadSave: '#2ed573', perfectCombo: '#ff9d00', domeSave: '#4a6cff', interrupt: '#a55eea', clutchCall: '#ffd36b', finalBlow: '#ff4757', lastStand: '#ff4757', flawless: '#ffd36b' };
+const COLORS = { squadSave: '#2ed573', perfectCombo: '#ff9d00', domeSave: '#4a6cff', interrupt: '#a55eea', clutchCall: '#ffd36b', finalBlow: '#ff4757', lastStand: '#ff4757', flawless: '#ffd36b', lastStandSquad: '#ffb020' };
 
 export function heroText(ev, name) {
     const [a, b] = (ev.pids || []).map(name);
@@ -14,6 +14,7 @@ export function heroText(ev, name) {
         case 'finalBlow': return { title: 'FINAL BLOW!', sub: `${a} took down ${ev.boss}` };
         case 'lastStand': return { title: 'LAST STAND!', sub: `${a}, nearly out of HP, finished ${ev.boss}` };
         case 'flawless': return { title: 'FLAWLESS!', sub: `${ev.boss} fell and nobody went down` };
+        case 'lastStandSquad': return { title: 'ANNIHILATION STOPPED!', sub: `Every class fired at once: ${(ev.pids || []).map(name).join(' + ')}` };
         default: return { title: 'HERO MOMENT!', sub: '' };
     }
 }

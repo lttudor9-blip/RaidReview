@@ -116,3 +116,24 @@ of truth, harder to cheat, all game logic in one place.
 | Strong class | Heroic | ~75% |
 
 Running out of time matters. The boss enrages when the timer ends, then gets stronger every 20 seconds.
+
+## Boss arc v2 and chaos mode
+
+Health bars stay short. The challenge comes from each boss's mechanics, and each boss teaches one thing:
+
+| # | Boss | Lesson | Mechanics |
+| --- | --- | --- | --- |
+| 1 | Raider | Warm-up | One easy Guardian role call. At 50% the boss staggers: stunned and Exposed, and every class hits it for full synergy. |
+| 2 | Enforcer | Protect the weak | Rail Shot hits the students with the lowest HP. Two classes get role calls. |
+| 3 | Construct | The virus | Infection spreads every 6s. Infected students stop charging their ultimate. Medics cure it, and a Guardian shield quarantines it. If 40% of the squad is infected, SYSTEM OVERLOAD hits everyone. |
+| 4 | Omega | The final test | A mix of everything. At 60%, Phase 2 forces the Extinction Wave (an ALL call). At 25%, the Last Stand: ultimates refill, and every class still standing must fire its ultimate before the countdown ends, or ANNIHILATION lands. |
+
+**Chaos mode** is the teacher toolbar during fights. Each tool has its own cooldown:
+- Meteor Strike
+- Shield Drain
+- Patient Zero
+- Air Strike
+- Supply Drop
+- Reward: +35% ultimate for one class
+
+The rules are in `chaos()` in `next/js/rules/engine.js`. The tests are in `tests/bosses.test.mjs`.

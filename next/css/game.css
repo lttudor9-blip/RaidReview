@@ -261,8 +261,34 @@ input.code { font-family: var(--display); font-size: 1.8rem; letter-spacing: 0.4
 .feed b { color: var(--ink); }
 
 .side-head { padding: 14px 12px 6px; display: flex; justify-content: space-between; align-items: center; }
-.host-controls { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.host-controls { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.host-controls .ctrl-row { display: flex; gap: 6px; }
 .host-controls .btn { min-height: 40px; padding: 0 12px; font-size: 0.7rem; flex: 1; }
+.vital.infected { background: rgba(46, 213, 115, 0.14); outline: 1px solid rgba(123, 237, 159, 0.6); }
+
+/* chaos mode (teacher toolbar) */
+.chaos { padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 71, 87, 0.45); background: linear-gradient(180deg, rgba(255, 71, 87, 0.1), rgba(255, 71, 87, 0.02)); }
+.chaos-h { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.chaos-h .label:first-child { color: #ff6b81; }
+.chaos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.chaos-btn { position: relative; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 8px; border-radius: 10px; text-align: left;
+    background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 71, 87, 0.45); font-family: var(--display); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; }
+.chaos-btn.help { border-color: rgba(255, 176, 32, 0.5); }
+.chaos-btn:hover:not(:disabled) { background: rgba(255, 71, 87, 0.18); }
+.chaos-btn.help:hover:not(:disabled) { background: rgba(255, 176, 32, 0.16); }
+.chaos-btn:disabled { opacity: 0.4; cursor: default; }
+.chaos-btn .ci { font-size: 1rem; }
+.chaos-btn .cc, .chaos-reward .cc { margin-left: auto; font-family: var(--mono); color: var(--ink-3); font-size: 0.7rem; }
+.chaos-reward { display: flex; gap: 6px; align-items: center; }
+.chaos-reward button { width: 42px; height: 40px; display: grid; place-items: center; border-radius: 10px; background: rgba(0, 0, 0, 0.35); border: 2px solid color-mix(in srgb, var(--cls) 60%, transparent); }
+.chaos-reward button:hover:not(:disabled) { box-shadow: 0 0 14px var(--cls); }
+.chaos-reward button:disabled { opacity: 0.35; cursor: default; }
+
+/* final boss last stand */
+.rolecall.laststand { border-color: #ffb020; box-shadow: 0 0 60px rgba(255, 176, 32, 0.45); animation: glowPulse 1s ease-in-out infinite; --cls: #ffb020; }
+.rolecall.laststand .rc-who { color: #ffb020; }
+.ls-cls { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 8px; border-radius: 12px; border: 2px solid color-mix(in srgb, var(--cls) 40%, transparent); opacity: 0.55; font-family: var(--display); font-size: 0.65rem; font-weight: 700; color: var(--cls); }
+.ls-cls.on { opacity: 1; border-color: var(--cls); box-shadow: 0 0 18px var(--cls); }
 
 /* lobby */
 .lobby { display: grid; grid-template-columns: 1fr 420px; height: 100vh; }

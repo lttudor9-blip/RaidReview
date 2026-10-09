@@ -25,6 +25,8 @@ function choose(s, p, now, rng, teamwork) {
     const listens = rng() < teamwork;
     const callForMe = call && !call.done && listens && (call.cls === p.cls || call.cls === 'ANY' || (call.cls === 'ALL' && !call.who[p.cls]));
 
+    // the last stand is on the projector in giant letters; most students answer it
+    if (b.lastStand && !b.lastStand.done && !b.lastStand.who[p.cls] && ok('ult') && rng() < 0.5 + teamwork * 0.5) return { ability: 'ult' };
     if (callForMe && call.cls === p.cls) {
         const target = p.cls === 'MEDIC' ? (down[0] || hurt[0] || p) : (s.players[b.attack.targets[0]] || p);
         if (ok('special')) return { ability: 'special', target: target.id };
@@ -53,7 +55,7 @@ function choose(s, p, now, rng, teamwork) {
     }
 }
 
-export function simulateRaid({ students = 24, mix = null, accuracy = 0.75, answerSecs = 7, teamwork = 0.7, difficulty = 'regular', format = 'standard', seed = 1 } = {}) {
+export function simulateRaid({ students = 24, mix = null, accuracy = 0.75, answerSecs = 7, teamwork = 0.7, difficulty = 'regular', format = 'full', seed = 1 } = {}) {
     const rng = rngFrom(seed);
     const s = createRaid({ difficulty });
     const classes = mix || CLASS_IDS;
