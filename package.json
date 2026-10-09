@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "sim": "node tests/sim/simulate.mjs",
-    "e2e": "node tests/e2e/raid.e2e.mjs"
+    "e2e": "node tests/e2e/raid.e2e.mjs",
+    "e2e:site": "node tests/e2e/site.e2e.mjs"
   },
   "devDependencies": {
     "playwright": "1.56.1"
