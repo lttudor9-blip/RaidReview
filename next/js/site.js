@@ -4,7 +4,6 @@
 //   #/edit/<id>   BattleSet editor   (#/new for a fresh set)
 
 import { auth, teacherAuth, dbGet } from './firebase.js';
-import { mirrorSignIn, mirrorSignOut, darkZoneRoomExists } from './teacher/darkzone.js';
 import { crest, CREST_NAMES } from './content/crests.js';
 import { CLASSES, CLASS_IDS } from './content/classes.js';
 import { esc } from './ui.js';
@@ -44,7 +43,7 @@ function renderNav() {
         ? `<a class="nav-link" href="#/dashboard">MY BATTLESETS</a><button class="btn ghost sm" id="nav-out">SIGN OUT</button>`
         : `<button class="btn primary sm" id="nav-in">TEACHER SIGN IN</button>`;
     const out = document.getElementById('nav-out');
-    if (out) out.onclick = async () => { await teacherAuth.signOut(); await mirrorSignOut(); location.hash = '#/'; };
+    if (out) out.onclick = async () => { await teacherAuth.signOut(); location.hash = '#/'; };
     const inn = document.getElementById('nav-in');
     if (inn) inn.onclick = () => openAuth('signin');
 }
@@ -128,7 +127,6 @@ async function joinRaid() {
     const q = `?room=${code}&name=${encodeURIComponent(name)}`;
     if (room && room.v === 2) return (location.href = 'play.html' + q);
     if (room) return (location.href = `../play.html?name=${encodeURIComponent(name)}&room=${code}`);
-    if (await darkZoneRoomExists(code)) return (location.href = `../darkzone.html?name=${encodeURIComponent(name)}&room=${code}`);
     err.textContent = 'No raid with that code. Check the projector!';
 }
 
@@ -170,7 +168,6 @@ function openAuth(mode) {
                 if (pw !== document.getElementById('a-pw2').value) throw { message: 'Passwords don\'t match.' };
                 await teacherAuth.signUp(e, pw);
             } else await teacherAuth.signIn(e, pw);
-            mirrorSignIn(e, pw);
             close();
             location.hash = '#/dashboard';
         } catch (x) {

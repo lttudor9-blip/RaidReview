@@ -39,9 +39,9 @@ function cleanQuestion(q) {
 export const deleteSet = (uid, id) => dbRemove(`battleSets/${uid}/${id}`);
 export const newSetId = () => `set_${Date.now()}`;
 
-// Hand a set to a game page (the contract play.html and darkzone.html read)
-export function launch(set, game) {
+// Hand a set to the game page (the contract play.html reads)
+export function launch(set) {
     localStorage.setItem('rr_launch_questions', JSON.stringify(set.questions));
     localStorage.setItem('rr_launch_set_title', set.title);
-    location.href = { raid: 'play.html?host=1', darkzone: '../darkzone.html?host=1', classic: '../play.html?host=1' }[game];
+    location.href = 'play.html?host=1';
 }

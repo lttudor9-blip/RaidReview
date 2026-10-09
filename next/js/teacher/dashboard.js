@@ -2,8 +2,6 @@
 
 import { listSets, saveSet, deleteSet, newSetId, launch, DEMO_SET } from './sets.js';
 import { questionIssues } from './importer.js';
-import { crest } from '../content/crests.js';
-import { CLASS_IDS } from '../content/classes.js';
 import { esc, toast } from '../ui.js';
 
 let sets = [];
@@ -108,31 +106,5 @@ async function removeSet(user, set) {
 
 // ================================================================= launch
 
-export function openLaunch(set) {
-    const m = document.getElementById('auth');
-    m.innerHTML = `<div class="modal-box wide">
-        <button class="modal-x" id="l-x">×</button>
-        <div class="label" style="text-align:center">LAUNCHING</div>
-        <div class="modal-title">${esc(set.title)}</div>
-        <div class="muted" style="text-align:center;margin-bottom:16px">${set.questions.length} questions. Pick a game mode; you'll set difficulty and raid length in the lobby.</div>
-        <div class="launch-grid">
-            <button class="launch-card raid" data-game="raid">
-                <div class="row" style="justify-content:center;gap:4px">${CLASS_IDS.map(c => crest(c, { size: 40 })).join('')}</div>
-                <div class="launch-name">RAID REVIEW</div>
-                <div class="muted">Co-op boss raid. The whole class vs. the bosses. <b class="gold">New version</b></div>
-            </button>
-            <button class="launch-card dz" data-game="darkzone">
-                <div class="launch-icon">⚔</div>
-                <div class="launch-name">DARK ZONE</div>
-                <div class="muted">Team vs. team PvP battle.</div>
-            </button>
-        </div>
-        <button class="modal-link-btn" data-game="classic">Use the classic Raid Review instead</button>
-    </div>`;
-    m.hidden = false;
-    m.onclick = e => {
-        if (e.target === m || e.target.id === 'l-x') { m.hidden = true; return; }
-        const g = e.target.closest('[data-game]');
-        if (g) launch(set, g.dataset.game);
-    };
-}
+// Straight into the raid lobby; difficulty and raid length are set there.
+export function openLaunch(set) { launch(set); }

@@ -114,12 +114,8 @@ const stored = await page.evaluate(async () => {
 check(stored.questions[0].answers.length === 3 && stored.questions[1].answers[stored.questions[1].correct] === 'Tutankhamun', 'blank answers dropped, right answer kept');
 await shot('site-dashboard');
 
-// launch modal
+// launch goes straight to the raid lobby
 await page.click('.set-card [data-act="launch"]');
-await page.waitForSelector('.launch-grid');
-await sleep(400);
-await shot('site-launch');
-await page.click('[data-game="raid"]');
 await page.waitForURL(/play\.html\?host=1/);
 const launched = await page.evaluate(() => JSON.parse(localStorage.getItem('rr_launch_questions')).length);
 check(launched === 5, 'launch hands 5 questions to the game');
