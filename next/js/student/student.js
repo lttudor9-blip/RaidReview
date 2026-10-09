@@ -14,6 +14,7 @@ import { crest, CREST_NAMES } from '../content/crests.js';
 import { abilityIcon, ABILITY_STAT, ULT_CALL } from '../content/abilityIcons.js';
 import { heroText, heroColor } from '../content/heroes.js';
 import { drawPuzzle, puzzleKey, puzzleTick } from './puzzle.js';
+import { syncLoot } from './loot.js';
 
 const S = {
     code: null, pid: null, room: null, me: null, live: {},
@@ -417,6 +418,11 @@ function updateGame() {
     if (inFight()) setHTML($('#intel-b'), intel(now));
     setHTML($('#banners'), banners(now));
     if (S.live.stage?.kind === 'puzzle') puzzleTick(S.live, now);
+    const wasLoot = !!S.lootOpen;
+    S.lootOpen = syncLoot({ live: S.live, cls: pub.cls, now, send: it => sendIntent(S.code, S.pid, it), local: (S.lootLocal ||= {}) });
+    if (S.lootOpen && !wasLoot) { Audio.sfxAchievement(); confetti(40); }
+    if (S.lootOpen && S.live.upgrade?.phase === 'reveal' && !S.lootRevealed) { S.lootRevealed = true; confetti(120); Audio.sfxPuzzleSolve(); }
+    if (!S.lootOpen) S.lootRevealed = false;
     renderSquad(now);
 
     // a new role call for my class re-draws the action panel so the special lights up

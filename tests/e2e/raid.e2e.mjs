@@ -162,6 +162,13 @@ while (Date.now() - t0 < 6 * 60000) {
     const state = await host.evaluate(() => { const H = window.__rrHost; return { heroes: H.heroes.length, stage: H.stage, ended: H.ended, puzzles: H.engine.puzzleLog, boss: H.engine.boss && { id: H.engine.boss.id, hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call, lastStand: !!(H.engine.boss.lastStand && !H.engine.boss.lastStand.done), stunned: H.engine.boss.stunUntil > Date.now() } }; });
     if (state.heroes > shots.hero && shots.hero < 2) { shots.hero = state.heroes; await sleep(500); await shot(host, `h06_hero_${shots.hero}`); await shot(students[0], `s08_hero_${shots.hero}`); }
     if (state.ended) break;
+    // loot drop: each bot votes for its class's first upgrade card
+    if (state.stage?.kind === 'upgrade') {
+        if (state.stage.phase === 'vote') {
+            for (const p of students) await p.locator('.sloot .sl-card').first().dispatchEvent('pointerdown').catch(() => {});
+            if (!shots.loot) { shots.loot = true; await sleep(900); await shot(host, 'h15_loot'); for (const [i, p] of students.entries()) await shot(p, `s16_loot_${CLASSES[i]}`); }
+        } else if (state.stage.phase === 'reveal' && !shots.lootReveal) { shots.lootReveal = true; await sleep(1200); await shot(host, 'h16_loot_reveal'); await shot(students[0], 's17_loot_reveal'); }
+    }
     if (state.stage?.kind === 'puzzle') {
         const k = state.stage.id;
         if (state.stage.phase === 'intro') {
@@ -197,11 +204,13 @@ await shot(host, 'h05_results');
 await host.locator('.panel', { hasText: 'MOST MISSED' }).first().screenshot({ path: path.join(OUT, 'h11_reteach.png') }).catch(() => {});
 await shot(students[0], 's06_end');
 
-const final = await host.evaluate(() => { const H = window.__rrHost; window.__beats = H.counts; const f = H.feed.join('\n'); return { puzzles: H.engine.puzzleLog, events: H.counts, secs: Math.round((Date.now() - performance.timeOrigin) / 1000), ended: H.ended, status: H.engine.status, stageIdx: H.stageIdx, players: Object.values(H.engine.players).map(p => ({ cls: p.cls, ...p.stats })) }; });
+const final = await host.evaluate(() => { const H = window.__rrHost; window.__beats = H.counts; window.__perks = H.engine.perks; const f = H.feed.join('\n'); return { perks: H.engine.perks, puzzles: H.engine.puzzleLog, events: H.counts, secs: Math.round((Date.now() - performance.timeOrigin) / 1000), ended: H.ended, status: H.engine.status, stageIdx: H.stageIdx, players: Object.values(H.engine.players).map(p => ({ cls: p.cls, ...p.stats })) }; });
 console.log('bot actions:', JSON.stringify(counts));
 console.log('final:', JSON.stringify(final));
 console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no page errors');
 await browser.close();
+const perksOk = ['WARRIOR', 'GUARDIAN', 'MEDIC', 'TACTICIAN'].every(c => (final.perks?.[c] || []).length === 3);
+console.log(perksOk ? 'every class unlocked 3 upgrades' : 'UPGRADES NOT AS EXPECTED: ' + JSON.stringify(final.perks));
 const puzzlesOk = (final.puzzles || []).length === 2 && final.puzzles.every(p => p.solved && p.strikes === 1);
 console.log(puzzlesOk ? 'both puzzles solved after one strike each' : 'PUZZLES NOT AS EXPECTED: ' + JSON.stringify(final.puzzles));
-process.exit(final.ended && !errors.length && puzzlesOk ? 0 : 1);
+process.exit(final.ended && !errors.length && puzzlesOk && perksOk ? 0 : 1);

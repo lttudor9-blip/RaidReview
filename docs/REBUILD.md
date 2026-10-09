@@ -137,3 +137,14 @@ Health bars stay short. The challenge comes from each boss's mechanics, and each
 - Reward: +35% ultimate for one class
 
 The rules are in `chaos()` in `next/js/rules/engine.js`. The tests are in `tests/bosses.test.mjs`.
+
+## Loot drop (upgrade vote)
+
+After every boss except the last, each class votes on one of three upgrades from its own pool of five. The winning upgrade lasts for the rest of the raid, so by the final boss each class has a three-upgrade "build".
+
+Where things live:
+- **Upgrade list:** `next/js/content/perks.js`
+- **Vote rules:** `next/js/rules/perks.js` (offer, vote, tally, winners, grant)
+- **Upgrade effects:** wired into `next/js/rules/engine.js` through `hasPerk()`
+- **Screens:** the projector loot screen is in `next/js/host/host.js`, and the student vote screen is `next/js/student/loot.js`
+- **Tests:** `tests/perks.test.mjs`

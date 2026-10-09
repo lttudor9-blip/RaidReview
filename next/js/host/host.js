@@ -15,6 +15,8 @@ import { crest } from '../content/crests.js';
 import { heroText, heroColor } from '../content/heroes.js';
 import { startPuzzle, puzzleInput, tickPuzzle, applyPuzzleOutcome } from '../rules/puzzles.js';
 import { PUZZLES, SYMBOLS, COLORS, MAX_STRIKES } from '../content/puzzles.js';
+import { offerPerks, castVote, tally, winners, allVoted, grantPerk, perksOf } from '../rules/perks.js';
+import { PERKS, RARITY, VOTE_MS, VOTE_MIN_MS, REVEAL_MS } from '../content/perks.js';
 
 const CALLSIGN_A = ['SHADOW', 'IRON', 'GHOST', 'STORM', 'CRIMSON', 'STEEL', 'FROST', 'VOID', 'NEON', 'SILENT', 'RAPID', 'RAZOR', 'COSMIC', 'ROGUE', 'APEX', 'DUSK', 'EMBER', 'COBALT', 'SOLAR', 'ONYX'];
 const CALLSIGN_B = ['VIPER', 'PHOENIX', 'WOLF', 'HAWK', 'TITAN', 'PHANTOM', 'STRIKER', 'BLADE', 'WRAITH', 'SURGE', 'FANG', 'NOVA', 'COBRA', 'RAVEN', 'SPECTER', 'RAPTOR', 'CIPHER', 'BOLT', 'SENTRY', 'COMET'];
@@ -112,6 +114,9 @@ function applyIntent(H, pid, it) {
         if (!['heal', 'shield', 'ult'].includes(it.k)) return;
         H.callouts[pid] = { k: it.k, at: now };
         logFeed(H, `<b>${nameOf(H, pid)}</b>: ${{ heal: 'NEED HEALS!', shield: 'SHIELD ME!', ult: 'ULTIMATE READY!' }[it.k]}`);
+    } else if (it.t === 'v') {
+        if (H.stage?.kind !== 'upgrade' || H.stage.phase !== 'vote' || !H.vote) return;
+        if (castVote(H.vote, H.engine, pid, it.perk)) { Audio.sfxBuff(); renderLoot(H, now); }
     } else if (it.t === 'p') {
         if (H.paused || H.stage?.kind !== 'puzzle' || H.stage.phase !== 'puzzle') return;
         handle(H, puzzleInput(H.engine, pid, it, now));
@@ -140,6 +145,7 @@ function loop(H) {
     flush(H);
     if (H.stage?.phase === 'fight') { renderFight(H, now); musicIntensity(H); updateControls(H, now); }
     if (inPuzzle) renderPuzzle(H, now);
+    if (H.stage?.kind === 'upgrade') tickLoot(H, now);
 }
 
 // The soundtrack builds as the boss goes down; later bosses start hotter.
@@ -162,7 +168,8 @@ function flush(H) {
     const live = {
         status: e.status, raidLives: e.raidLives, regroupUntil: e.regroupUntil,
         stage: H.stage, stageCount: H.stages ? H.stages.length : 0, stageIdx: H.stageIdx,
-        boss: e.boss, team: e.team, paused: H.paused, fx: H.fx, puzzle: e.puzzle || null, mods: e.nextMods || null,
+        boss: e.boss, team: e.team, paused: H.paused, fx: H.fx, puzzle: e.puzzle || null, mods: e.nextMods || null, perks: e.perks || null,
+        upgrade: H.vote ? { offers: H.vote.offers, tally: tally(H.vote, e), endsAt: H.vote.endsAt, phase: H.stage?.phase || 'vote', winners: H.vote.winners || null } : null,
         clock: H.clockAt // students sync their countdowns to the host's clock (sent every few seconds, not every tick)
     };
     for (const [k, v] of Object.entries(live)) setIfChanged(H, out, `live/${k}`, v);
@@ -187,7 +194,7 @@ function setIfChanged(H, out, path, value) {
 // ================================================================= events → visuals
 
 // Team-wide moments every Chromebook reacts to
-const TEAM_FX = new Set(['hero', 'infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'attack', 'bossDefeated', 'breach', 'expose', 'puzzleStrike', 'puzzleSolved', 'puzzleFailed', 'reactorStep', 'reactorRound', 'vaultLocking', 'enrageStack', 'stagger', 'bossBeat', 'lastStand', 'lastStandProgress', 'lastStandWon', 'lastStandFailed', 'overload', 'chaos', 'teacherReward']);
+const TEAM_FX = new Set(['hero', 'infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'attack', 'bossDefeated', 'breach', 'expose', 'puzzleStrike', 'puzzleSolved', 'puzzleFailed', 'reactorStep', 'reactorRound', 'vaultLocking', 'enrageStack', 'stagger', 'bossBeat', 'lastStand', 'lastStandProgress', 'lastStandWon', 'lastStandFailed', 'overload', 'chaos', 'teacherReward', 'perkUnlocked']);
 // Personal moments go to each involved student's own channel (players/{pid}/fx),
 // so a busy room never pushes someone's damage number out of the shared list
 const PERSONAL_KEYS = ['pid', 'target', 'by'];
@@ -293,6 +300,7 @@ function visual(H, ev) {
             break;
         }
         case 'teacherReward': floater(layer, `TEACHER BONUS: ${CLASSES[ev.cls].name.toUpperCase()}S +35% ULT`, { color: CLASSES[ev.cls].color, size: '2.8rem', y: 65 }); logFeed(H, `<b class="gold">Teacher bonus</b> for the <b style="color:${CLASSES[ev.cls].color}">${CLASSES[ev.cls].name}s</b>: great teamwork!`); Audio.stinger('hero'); break;
+        case 'perkUnlocked': logFeed(H, `<b style="color:${CLASSES[ev.cls].color}">${CLASSES[ev.cls].name}s</b> unlocked <b class="gold">${esc(ev.name)}</b>`); break;
         case 'hero': heroMoment(H, ev); break;
         case 'wipe': showWipe(H, ev); break;
         case 'regrouped': hideOverlay(H); Audio.muffle(false); break;
@@ -397,7 +405,7 @@ function onBossDefeated(H) {
             <div class="sub">${nextPuzzle
                 ? `Next: <b class="gold">${esc(nextPuzzle.name)}</b>, a raid puzzle.<br>No free heal this time: solve it to power up. Fail it and the next boss gets tougher.`
                 : `Squad patched up: +40% HP, +15% ultimate charge${nextBoss ? `<br>Next: <b style="color:${nextBoss.color}">${esc(nextBoss.name)}</b>` : ''}`}</div>`);
-        setTimeout(() => { hideOverlay(H); enterStage(H, H.stageIdx + 1); }, 5500);
+        setTimeout(() => { hideOverlay(H); startLoot(H, () => enterStage(H, H.stageIdx + 1)); }, 5500);
     };
     if (H.boss) H.boss.die(() => setTimeout(done, 600)); else setTimeout(done, 1500);
 }
@@ -852,6 +860,102 @@ function puzzleVisual(H, ev) {
                 }, 7000);
             }, 1200);
             break;
+        }
+    }
+}
+
+// ================================================================= loot drop (upgrade vote)
+
+// After each boss (but the last) every class votes on an upgrade for itself.
+function startLoot(H, next) {
+    const offers = offerPerks(H.engine);
+    if (!Object.keys(offers).length) return next();
+    const now = Date.now();
+    H.vote = { offers, votes: {}, startedAt: now, endsAt: now + VOTE_MS, next };
+    H.stage = { kind: 'upgrade', id: 'loot', phase: 'vote', t0: now };
+    Audio.music('rest', { restart: true });
+    Audio.stinger('hero');
+    renderLootScreen(H);
+}
+
+function tickLoot(H, now) {
+    const v = H.vote;
+    if (!v) return;
+    if (H.stage.phase === 'vote') {
+        const early = allVoted(v, H.engine) && now - v.startedAt >= VOTE_MIN_MS;
+        if (now >= v.endsAt || early) {
+            v.winners = winners(v, H.engine);
+            for (const [cls, id] of Object.entries(v.winners)) handle(H, grantPerk(H.engine, cls, id));
+            H.stage = { ...H.stage, phase: 'reveal', t0: now };
+            Audio.stinger('solve'); setTimeout(() => Audio.sfxAchievement(), 300);
+            renderLoot(H, now);
+            setTimeout(() => { const go = v.next; H.vote = null; go(); }, REVEAL_MS);
+            return;
+        }
+    }
+    renderLoot(H, now);
+}
+
+const lootCard = (id, n, total, cls) => {
+    const P = PERKS[id], R = RARITY[P.rarity];
+    return `<div class="lcard" data-perk="${id}" style="--rc:${R.color}">
+        <div class="lc-rarity">${R.label}</div>
+        <div class="lc-icon">${P.icon}</div>
+        <div class="lc-name">${esc(P.name)}</div>
+        <div class="lc-desc">${esc(P.desc)}</div>
+        <div class="lc-votes"><div class="bar"><i data-bar="${cls}:${id}" style="width:${total ? pct(n, total) : 0}%"></i></div><span data-count="${cls}:${id}">${n}</span></div>
+        <div class="lc-stamp">UNLOCKED!</div>
+    </div>`;
+};
+
+function renderLootScreen(H) {
+    const v = H.vote, t = tally(v, H.engine);
+    mount(`
+    <div class="loot">
+        <div class="loot-rays" aria-hidden="true"></div>
+        <div class="loot-head">
+            <div class="loot-burst">◆</div>
+            <div class="loot-kicker">BOSS DEFEATED · LOOT DROP</div>
+            <div class="loot-title">CHOOSE YOUR UPGRADES</div>
+            <div class="loot-sub">Every class votes on its Chromebook. Talk it over: the winning upgrade is yours for the rest of the raid.</div>
+        </div>
+        <div class="loot-timer" id="loot-timer"></div>
+        <div class="loot-cols">${Object.entries(v.offers).map(([cls, ids]) => {
+            const total = Object.values(t[cls]).reduce((a, b) => a + b, 0);
+            const owned = perksOf(H.engine, cls);
+            return `<div class="loot-col" data-cls="${cls}" style="--cls:${CLASSES[cls].color}">
+                <div class="lcol-head">${crest(cls, { size: 54, glow: true })}<div><div class="lcol-name">${CLASSES[cls].name.toUpperCase()}S</div><div class="lcol-count" data-voted="${cls}"></div></div></div>
+                ${ids.map(id => lootCard(id, t[cls][id], total, cls)).join('')}
+                <div class="lcol-owned">${owned.length ? owned.map(o => `<span title="${esc(PERKS[o].name)}">${PERKS[o].icon}</span>`).join('') : '<i>no upgrades yet</i>'}</div>
+            </div>`;
+        }).join('')}</div>
+    </div>`);
+    H.ui = { lootTimer: $('#loot-timer') };
+    if (H.boss) { H.boss.destroy(); H.boss = null; }
+    renderLoot(H, Date.now());
+}
+
+function renderLoot(H, now) {
+    const v = H.vote;
+    if (!v || !H.ui.lootTimer) return;
+    const t = tally(v, H.engine), reveal = H.stage.phase === 'reveal';
+    H.ui.lootTimer.textContent = reveal ? 'UPGRADES UNLOCKED' : `${Math.max(0, Math.ceil((v.endsAt - now) / 1000))}`;
+    H.ui.lootTimer.classList.toggle('done', reveal);
+    for (const [cls, counts] of Object.entries(t)) {
+        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+        const members = Object.values(H.engine.players).filter(p => p.cls === cls).length;
+        const c = document.querySelector(`[data-voted="${cls}"]`);
+        if (c) c.textContent = `${total}/${members} voted`;
+        for (const [id, n] of Object.entries(counts)) {
+            const bar = document.querySelector(`[data-bar="${cls}:${id}"]`), num = document.querySelector(`[data-count="${cls}:${id}"]`);
+            if (bar) bar.style.width = (total ? pct(n, total) : 0) + '%';
+            if (num) num.textContent = n;
+        }
+    }
+    if (reveal) {
+        document.querySelector('.loot')?.classList.add('revealed');
+        for (const [cls, id] of Object.entries(v.winners || {})) {
+            document.querySelectorAll(`.loot-col[data-cls="${cls}"] .lcard`).forEach(el => el.classList.toggle('win', el.dataset.perk === id));
         }
     }
 }

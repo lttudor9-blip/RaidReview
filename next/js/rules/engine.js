@@ -7,9 +7,21 @@
 // tests and the balance simulator can be deterministic.
 
 import { CLASSES, SYNERGY_WINDOW, SYNERGY_MULT, MONO_CLASS_PENALTY, STREAK_BONUS, ULT_PER_CORRECT, ULT_PER_SUPPORT, SPIRIT_RALLY_PER_CORRECT } from '../content/classes.js';
+import { PERKS } from '../content/perks.js';
 import { BOSSES, PHASES, TIMER_ENRAGE, ROLE_CALL_REFLECT, INFECTION_SPREAD_MS, MIN_SCALING_PLAYERS, WIPE_REGROUP_MS, WIPE_BOSS_HEAL, RAID_LIVES, PLAYER_LIVES, DIFFICULTY } from '../content/raid.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// Upgrades the class has unlocked in the vote after each boss (see rules/perks.js)
+export const hasPerk = (state, id) => !!PERKS[id] && ((state.perks || {})[PERKS[id].cls] || []).includes(id);
+const ULT_PERK = { WARRIOR: 'w_fury', GUARDIAN: 'g_rallycry', MEDIC: 'm_triage', TACTICIAN: 't_overwatch' };
+const HP_PERK = { WARRIOR: 'w_ironskin', GUARDIAN: 'g_fortress', MEDIC: 'm_vitality', TACTICIAN: 't_firewall' };
+const ultGain = (state, p, n) => Math.round(n * (hasPerk(state, ULT_PERK[p.cls]) ? 1.3 : 1));
+// a shield is a count of hits it will still block (Aegis shields block two)
+function useShield(p) {
+    p.shield = Math.max(0, (p.shield === true ? 1 : p.shield || 0) - 1) || false;
+    if (!p.shield) p.shieldBy = null;
+}
 
 export function difficultyOf(state) {
     return DIFFICULTY[state.difficulty] || DIFFICULTY.regular;
@@ -33,7 +45,7 @@ export function createRaid({ difficulty = 'regular' } = {}) {
 export function addPlayer(state, pid, { name, cls }) {
     const c = CLASSES[cls];
     if (!c) throw new Error(`unknown class ${cls}`);
-    const maxHp = Math.round(c.hp * difficultyOf(state).playerHp);
+    const maxHp = Math.round(c.hp * difficultyOf(state).playerHp * (hasPerk(state, HP_PERK[cls]) ? 1.25 : 1));
     state.players[pid] = {
         id: pid, name, cls,
         hp: maxHp, maxHp, lives: PLAYER_LIVES, status: 'alive',
@@ -83,7 +95,7 @@ export function answer(state, pid, correct, now) {
         p.stats.bestStreak = Math.max(p.stats.bestStreak, p.streak);
         if (p.status === 'alive') {
             p.armed = true;
-            if (!p.infected) p.ult = Math.min(100, p.ult + ULT_PER_CORRECT); // the virus jams your ultimate
+            if (!p.infected) p.ult = Math.min(100, p.ult + ultGain(state, p, ULT_PER_CORRECT)); // the virus jams your ultimate
             if (p.cd > 0) p.cd--;
         } else if (p.status === 'down') {
             p.revive++;
@@ -104,7 +116,7 @@ export function answer(state, pid, correct, now) {
         if (p.status === 'alive') {
             // wrong answers sting but never knock a student out
             const dmg = Math.round(p.maxHp * d.wrongDmg);
-            if (p.shield) { p.shield = false; ev.push({ type: 'shieldBlock', pid }); }
+            if (p.shield) { useShield(p); ev.push({ type: 'shieldBlock', pid }); }
             else { p.hp = Math.max(1, p.hp - dmg); ev.push({ type: 'selfDamage', pid, amount: dmg }); }
         } else if (p.status === 'down') {
             p.revive = 0;
@@ -153,11 +165,12 @@ export function act(state, pid, { ability, target } = {}, now) {
         case 'damage': {
             let base = ab.power, crit = false, combo = null;
             if (ability === 'ult' && ab.comboPower && exposed) {
-                base = ab.comboPower; combo = 'SHATTER';
+                base = ab.comboPower * (hasPerk(state, 'w_shatterpoint') ? 1.5 : 1); combo = 'SHATTER';
                 b.exposedUntil = 0; // the combo consumes the Expose
-            } else if (ability === 'special' && exposed) {
+            } else if (ability === 'special' && (exposed || (p.cls === 'WARRIOR' && hasPerk(state, 'w_executioner')))) {
                 base *= 1.5; crit = true;
             }
+            if (p.cls === 'WARRIOR' && hasPerk(state, 'w_bloodlust')) base *= 1.2;
             const mult = (1 + streakBonus(p)) * synergyMult(state, now) * (exposed ? 1 + b.exposeBonus : 1) * (b.mods?.dmg || 1);
             const amount = Math.round(base * mult);
             b.hp = Math.max(0, b.hp - amount);
@@ -172,18 +185,19 @@ export function act(state, pid, { ability, target } = {}, now) {
         }
         case 'shield': {
             if (ally.status !== 'alive') return [{ type: 'rejected', pid, reason: 'target is down' }];
-            ally.shield = true;
+            ally.shield = hasPerk(state, 'g_aegis') ? 2 : 1;
             ally.shieldBy = p.id; // remember who to credit when it blocks a hit
             p.stats.shields++;
-            p.ult = Math.min(100, p.ult + ULT_PER_SUPPORT);
+            p.ult = Math.min(100, p.ult + ultGain(state, p, ULT_PER_SUPPORT));
             ev.push({ type: 'shield', pid, target: ally.id });
             break;
         }
         case 'heal': {
+            const healFrac = hasPerk(state, 'm_overflow') ? 0.45 : ab.amount;
             if (ally.status === 'down') {
-                revive(state, ally, ab.reviveAmount, pid, ev);
+                revive(state, ally, hasPerk(state, 'm_secondwind') ? 0.7 : ab.reviveAmount, pid, ev);
             } else if (ally.status === 'alive') {
-                const amount = Math.min(ally.maxHp - ally.hp, Math.round(ally.maxHp * ab.amount));
+                const amount = Math.min(ally.maxHp - ally.hp, Math.round(ally.maxHp * healFrac));
                 ally.hp += amount;
                 p.stats.heal += amount;
                 if (ally.infected) { ally.infected = 0; ev.push({ type: 'cured', pid, target: ally.id }); }
@@ -191,19 +205,24 @@ export function act(state, pid, { ability, target } = {}, now) {
             } else {
                 return [{ type: 'rejected', pid, reason: 'target is out' }];
             }
-            p.ult = Math.min(100, p.ult + ULT_PER_SUPPORT);
+            if (hasPerk(state, 'm_splash')) {
+                // the two lowest other teammates get half a heal too
+                const others = alivePlayers(state).filter(a => a.id !== ally.id).sort((x, y) => x.hp / x.maxHp - y.hp / y.maxHp).slice(0, 2);
+                for (const a of others) { const amt = Math.min(a.maxHp - a.hp, Math.round(a.maxHp * healFrac / 2)); if (amt > 0) { a.hp += amt; p.stats.heal += amt; ev.push({ type: 'heal', pid, target: a.id, amount: amt, splash: true }); } }
+            }
+            p.ult = Math.min(100, p.ult + ultGain(state, p, ULT_PER_SUPPORT));
             break;
         }
         case 'expose': {
-            b.exposedUntil = now + ab.duration;
-            b.exposeBonus = ab.bonus;
+            b.exposedUntil = now + ab.duration * (hasPerk(state, 't_deepscan') ? 2 : 1);
+            b.exposeBonus = hasPerk(state, 't_weakpoint') ? 0.4 : ab.bonus;
             b.exposedBy = p.id;
-            p.ult = Math.min(100, p.ult + ULT_PER_SUPPORT);
+            p.ult = Math.min(100, p.ult + ultGain(state, p, ULT_PER_SUPPORT));
             ev.push({ type: 'expose', pid, until: b.exposedUntil });
             break;
         }
         case 'dome': {
-            state.team.dome = now + ab.duration;
+            state.team.dome = now + (hasPerk(state, 'g_bastion') ? 12000 : ab.duration);
             state.team.domeBy = p.id;
             ev.push({ type: 'dome', pid, until: state.team.dome });
             break;
@@ -213,7 +232,7 @@ export function act(state, pid, { ability, target } = {}, now) {
             const standing = squad.filter(a => a.status === 'alive').length;
             const downBefore = squad.length - standing;
             for (const a of playersOf(state)) {
-                if (a.status === 'down') revive(state, a, ab.reviveAmount, pid, ev);
+                if (a.status === 'down') revive(state, a, hasPerk(state, 'm_secondwind') ? 0.7 : ab.reviveAmount, pid, ev);
                 else if (a.status === 'alive') {
                     const amount = Math.min(a.maxHp - a.hp, Math.round(a.maxHp * ab.amount));
                     a.hp += amount; a.infected = 0;
@@ -234,10 +253,10 @@ export function act(state, pid, { ability, target } = {}, now) {
                 if (big && !b.attack.call?.done) ev.push({ type: 'hero', kind: 'interrupt', pids: [pid], attack: b.attack.name });
                 b.attack = null;
             }
-            b.stunUntil = now + ab.stun;
+            b.stunUntil = now + (hasPerk(state, 't_overclock') ? 15000 : ab.stun);
             b.telegraph = null;
             b.exposedUntil = now + ab.expose;
-            b.exposeBonus = CLASSES.TACTICIAN.abilities.special.bonus;
+            b.exposeBonus = hasPerk(state, 't_weakpoint') ? 0.4 : CLASSES.TACTICIAN.abilities.special.bonus;
             b.exposedBy = p.id;
             ev.push({ type: 'breach', pid });
             break;
@@ -278,8 +297,15 @@ function damagePlayer(state, p, amount, ev, source) {
         // a shield from a teammate that eats a boss hit is a SAVE
         const by = p.shieldBy && p.shieldBy !== p.id && state.players[p.shieldBy] ? p.shieldBy : null;
         if (by) state.players[by].stats.saves++;
-        p.shield = false; p.shieldBy = null;
+        const caster = p.shieldBy && state.players[p.shieldBy];
+        useShield(p);
         ev.push({ type: 'shieldBlock', pid: p.id, source, by, amount });
+        if (caster && caster.cls === 'GUARDIAN' && hasPerk(state, 'g_spikes') && state.boss && !state.boss.defeatedAt) {
+            const back = 1500;
+            state.boss.hp = Math.max(0, state.boss.hp - back);
+            caster.stats.dmg += back;
+            ev.push({ type: 'hit', pid: caster.id, ability: 'spikes', amount: back, crit: false });
+        }
         return 'blocked';
     }
     p.hp -= amount;
@@ -492,7 +518,7 @@ function tickInfection(state, now, rng, ev) {
         if (v.shield) {
             const by = v.shieldBy && v.shieldBy !== v.id && state.players[v.shieldBy] ? v.shieldBy : null;
             if (by) state.players[by].stats.saves++;
-            v.shield = false; v.shieldBy = null;
+            useShield(v);
             ev.push({ type: 'quarantine', pid: v.id, from: p.id, by });
         } else {
             v.infected = now + V.spreadMs;
