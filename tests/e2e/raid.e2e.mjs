@@ -54,7 +54,7 @@ const code = (await host.textContent('#join-code')).trim();
 console.log('room', code);
 
 // ---- students ----
-const phone = { width: 400, height: 820 };
+const phone = { width: 1366, height: 768 }; // school Chromebook
 const students = [];
 for (let i = 0; i < 4; i++) {
     const p = await ctx.newPage({ viewport: phone }); watch(p, CLASSES[i]);
@@ -87,7 +87,7 @@ await sleep(1500);
 const known = Object.fromEntries(QUESTIONS.map(q => [q.text, q.answers[q.correct]]));
 async function botStep(p, accuracy) {
     return p.evaluate(({ known, accuracy }) => {
-        const q = document.querySelector('.question');
+        const q = document.querySelector('.qbox .qt');
         const ans = [...document.querySelectorAll('#g-ans .answer')];
         if (q && ans.length && !document.querySelector('#g-ans.locked') && !document.querySelector('#g-ans.arming')) {
             const right = ans.find(a => a.textContent === known[q.textContent]);
@@ -101,8 +101,9 @@ async function botStep(p, accuracy) {
             pick.click();
             return 'act:' + pick.dataset.ab;
         }
-        const t = document.querySelector('#g-tg .target');
+        const t = document.querySelector('.sq-card.targetable') || document.querySelector('#g-tg .target');
         if (t) { t.click(); return 'target'; }
+        if (Math.random() < 0.01) { const c = document.querySelector('.sq-calls button:not(:disabled)'); if (c) { c.click(); return 'callout'; } }
         return 'idle';
     }, { known, accuracy });
 }
@@ -114,7 +115,9 @@ while (Date.now() - t0 < 6 * 60000) {
     for (const [i, p] of students.entries()) {
         const r = await botStep(p, 0.8).catch(() => 'err');
         counts[r] = (counts[r] || 0) + 1;
-        if (!shots.stuAction && r === 'answer' && i === 0) { await sleep(700); if (await p.$('#g-act')) { await shot(p, 's04_actions'); shots.stuAction = true; } }
+        if (!shots.stuAction && r === 'answer' && i === 0) { await sleep(560); if (await p.$('#g-act')) { await shot(p, 's04_actions'); shots.stuAction = true; } }
+        if (shots.stuAction && !shots.stuHit && r.startsWith('act') && i === 0) { await sleep(350); await shot(p, 's04b_damage_number'); shots.stuHit = true; }
+        if (!shots.stuTarget && i === 2 && await p.$('.sq-card.targetable')) { await shot(p, 's04c_targeting'); shots.stuTarget = true; }
     }
     const state = await host.evaluate(() => { const H = window.__rrHost; return { stage: H.stage, ended: H.ended, boss: H.engine.boss && { hp: H.engine.boss.hp, max: H.engine.boss.maxHp, call: !!H.engine.boss.attack?.call } }; });
     if (state.ended) break;

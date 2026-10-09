@@ -27,7 +27,9 @@ export async function startHost({ questions, title, hostUid }) {
         paused: false, pausedAt: 0, ended: false,
         boss: null, ui: {}, assists: { strike: true, rally: true },
         callsignsUsed: new Set(), names: {},
-        counts: {} // event tally, for the end screen and debugging
+        counts: {}, // event tally, for the end screen and debugging
+        pfx: {},    // per-student effect channels
+        callouts: {}
     };
     H.engine = createRaid({ difficulty: H.settings.difficulty });
     H.code = await createRoom({ hostUid, title, questions, settings: H.settings });
@@ -98,6 +100,11 @@ function applyIntent(H, pid, it) {
         const correct = it.p === q.correct;
         logQuestion(H, pid, it.q, it.p, correct);
         handle(H, answer(H.engine, pid, correct, now));
+    } else if (it.t === 'c') {
+        // student callout: NEED HEALS / SHIELD ME / ULT READY
+        if (!['heal', 'shield', 'ult'].includes(it.k)) return;
+        H.callouts[pid] = { k: it.k, at: now };
+        logFeed(H, `<b>${nameOf(H, pid)}</b>: ${{ heal: 'NEED HEALS!', shield: 'SHIELD ME!', ult: 'ULTIMATE READY!' }[it.k]}`);
     } else if (it.t === 'x') {
         if (H.paused || H.stage?.phase !== 'fight') return;
         handle(H, act(H.engine, pid, { ability: it.ab, target: it.tg || null }, now));
@@ -132,14 +139,16 @@ function flush(H) {
     const live = {
         status: e.status, raidLives: e.raidLives, regroupUntil: e.regroupUntil,
         stage: H.stage, stageCount: H.stages ? H.stages.length : 0, stageIdx: H.stageIdx,
-        boss: e.boss, team: e.team, paused: H.paused, fx: H.fx
+        boss: e.boss, team: e.team, paused: H.paused, fx: H.fx,
+        clock: Date.now() // students sync their countdowns to the host's clock
     };
     for (const [k, v] of Object.entries(live)) setIfChanged(H, out, `live/${k}`, v);
     for (const p of Object.values(e.players)) {
-        const pub = { id: p.id, name: p.name, cls: p.cls, hp: p.hp, maxHp: p.maxHp, lives: p.lives, status: p.status, ult: p.ult, cd: p.cd, streak: p.streak, armed: p.armed, shield: p.shield, infected: p.infected, revive: p.revive };
+        const pub = { id: p.id, name: p.name, cls: p.cls, hp: p.hp, maxHp: p.maxHp, lives: p.lives, status: p.status, ult: p.ult, cd: p.cd, streak: p.streak, armed: p.armed, shield: p.shield, infected: p.infected, revive: p.revive, callout: H.callouts[p.id] || null };
         setIfChanged(H, out, `players/${p.id}/pub`, pub);
         setIfChanged(H, out, `players/${p.id}/stats`, p.stats);
         if (H.qlog[p.id]) setIfChanged(H, out, `players/${p.id}/qlog`, H.qlog[p.id]);
+        if (H.pfx[p.id]) setIfChanged(H, out, `players/${p.id}/fx`, H.pfx[p.id]);
     }
     if (Object.keys(out).length) updateRoom(H.code, out).catch(err => console.error('write failed', err));
 }
@@ -154,16 +163,26 @@ function setIfChanged(H, out, path, value) {
 
 // ================================================================= events → visuals
 
-const STUDENT_FX = new Set(['rejected', 'playerHit', 'shieldBlock', 'heal', 'shield', 'revive', 'down', 'eliminated', 'cured', 'infected', 'infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'bossDefeated']);
+// Team-wide moments every Chromebook reacts to
+const TEAM_FX = new Set(['infectionSpread', 'roleCallSuccess', 'roleCallFailed', 'combo', 'synergy', 'rally', 'wipe', 'regrouped', 'domeBlock', 'dome', 'massHeal', 'interrupt', 'phase', 'enrage', 'windup', 'attack', 'bossDefeated', 'breach', 'expose']);
+// Personal moments go to each involved student's own channel (players/{pid}/fx),
+// so a busy room never pushes someone's damage number out of the shared list
+const PERSONAL_KEYS = ['pid', 'target', 'by'];
 
 function nameOf(H, pid) { return esc(H.engine.players[pid]?.name || '?'); }
 
 function handle(H, events) {
     for (const ev of events) {
         H.counts[ev.type] = (H.counts[ev.type] || 0) + 1;
-        if (STUDENT_FX.has(ev.type)) {
+        if (TEAM_FX.has(ev.type)) {
             H.fx.push({ s: ++H.fxSeq, ...ev });
             if (H.fx.length > 25) H.fx.shift();
+        }
+        for (const pid of new Set(PERSONAL_KEYS.map(k => ev[k]).filter(Boolean))) {
+            if (!H.engine.players[pid]) continue;
+            const list = (H.pfx[pid] ||= []);
+            list.push({ s: ++H.fxSeq, ...ev });
+            if (list.length > 10) list.shift();
         }
         visual(H, ev);
     }
@@ -538,6 +557,6 @@ function renderFight(H, now) {
         <div class="vital ${p.status !== 'alive' ? p.status : ''} ${targets.has(p.id) && p.status === 'alive' ? 'targeted' : ''}" data-cls="${p.cls}">
             <div class="stripe"></div>
             <div style="min-width:0"><div class="v-name">${esc(p.name)}</div><div class="bar hp ${p.hp / p.maxHp < 0.35 ? 'low' : ''}"><i style="width:${pct(p.hp, p.maxHp)}%"></i></div></div>
-            <div class="v-tags">${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
+            <div class="v-tags">${H.callouts[p.id] && now - H.callouts[p.id].at < 8000 ? `<span class="callout-badge ${H.callouts[p.id].k}">${{ heal: 'HEALS', shield: 'SHIELD', ult: 'ULT' }[H.callouts[p.id].k]}</span>` : ''}${p.shield ? '<span title="Shielded" style="color:#4a6cff">◆</span>' : ''}${p.infected ? '<span title="Infected" style="color:#7bed9f">☣</span>' : ''}${p.ult >= 100 ? '<span title="Ultimate ready" class="gold">★</span>' : ''}${p.status === 'down' ? '<span style="color:#ff4757">DOWN</span>' : p.status === 'out' ? '<span class="muted">SPIRIT</span>' : ''}</div>
         </div>`).join('');
 }
