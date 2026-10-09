@@ -185,7 +185,9 @@ function updateClassCounts() {
     for (const c of CLASS_IDS) {
         const el = document.querySelector(`[data-count="${c}"]`);
         const names = counts[c];
-        if (el) el.innerHTML = names.length ? `<b>${names.length}</b> in the squad: ${names.slice(0, 3).map(esc).join(', ')}${names.length > 3 ? '…' : ''}` : 'Nobody yet';
+        // with call signs on, classmates' real names never show on anyone's screen
+        const list = S.room?.meta?.callsigns ? '' : `: ${names.slice(0, 3).map(esc).join(', ')}${names.length > 3 ? '…' : ''}`;
+        if (el) el.innerHTML = names.length ? `<b>${names.length}</b> in the squad${list}` : 'Nobody yet';
         const need = document.querySelector(`[data-need="${c}"]`);
         if (need) need.textContent = names.length ? '' : 'NEEDED!';
     }

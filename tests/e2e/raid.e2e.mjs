@@ -14,13 +14,18 @@ const ROOT = path.resolve(HERE, '../..');
 const OUT = path.join(HERE, 'out');
 fs.mkdirSync(OUT, { recursive: true });
 
-const QUESTIONS = [
+// SHOWCASE=1 plays a real review set (for website screenshots). Call signs are
+// on by default, so screens never show the names students type in.
+const SHOWCASE = !!process.env.SHOWCASE;
+const TEST_QUESTIONS = [
     { text: 'What is 2 + 2?', answers: ['3', '4', '5', '6'], correct: 1, type: 'mc' },
     { text: 'Capital of France?', answers: ['Paris', 'Rome', 'Madrid', 'Berlin'], correct: 0, type: 'mc' },
     { text: 'The sun is a star.', answers: ['True', 'False'], correct: 0, type: 'tf' },
     { text: 'Largest planet?', answers: ['Mars', 'Venus', 'Earth', 'Jupiter'], correct: 3, type: 'mc' },
     { text: 'Water freezes at 100°C.', answers: ['True', 'False'], correct: 1, type: 'tf' }
 ];
+const QUESTIONS = SHOWCASE ? (await import('../../next/js/content/questions.js')).DEMO_QUESTIONS : TEST_QUESTIONS;
+const NAMES = ['Bot1', 'Bot2', 'Bot3', 'Bot4'];
 const CLASSES = ['WARRIOR', 'GUARDIAN', 'MEDIC', 'TACTICIAN'];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const errors = [];
@@ -47,7 +52,7 @@ const shot = (page, name) => page.screenshot({ path: path.join(OUT, name + '.png
 
 // ---- host ----
 const host = await ctx.newPage(); watch(host, 'host');
-await host.addInitScript(q => { if (location.search.includes('host=1')) { localStorage.setItem('rr_launch_questions', q); localStorage.setItem('rr_launch_set_title', 'E2E Check'); } }, JSON.stringify(QUESTIONS));
+await host.addInitScript(({ q, t }) => { if (location.search.includes('host=1')) { localStorage.setItem('rr_launch_questions', q); localStorage.setItem('rr_launch_set_title', t); } }, { q: JSON.stringify(QUESTIONS), t: SHOWCASE ? 'Unit 4: Ancient Egypt' : 'E2E Check' });
 await host.goto('http://raid.test/next/play.html?host=1');
 await host.waitForSelector('#join-code', { timeout: 15000 });
 const code = (await host.textContent('#join-code')).trim();
@@ -59,7 +64,7 @@ const students = [];
 for (let i = 0; i < 4; i++) {
     const p = await ctx.newPage({ viewport: phone }); watch(p, CLASSES[i]);
     await p.setViewportSize(phone);
-    await p.goto(`http://raid.test/next/play.html?room=${code}&name=Bot${i + 1}`);
+    await p.goto(`http://raid.test/next/play.html?room=${code}&name=${NAMES[i]}`);
     await p.waitForSelector('.hs-card', { timeout: 10000 });
     if (i === 0) await shot(p, 's01_class_select');
     await p.click(`[data-pick="${CLASSES[i]}"]`);
@@ -178,8 +183,9 @@ while (Date.now() - t0 < 6 * 60000) {
     }
     await sleep(350);
 }
-await sleep(1500);
+await sleep(2500);
 await shot(host, 'h05_results');
+await host.locator('.panel', { hasText: 'MOST MISSED' }).first().screenshot({ path: path.join(OUT, 'h11_reteach.png') }).catch(() => {});
 await shot(students[0], 's06_end');
 
 const final = await host.evaluate(() => { const H = window.__rrHost; const f = H.feed.join('\n'); return { puzzles: H.engine.puzzleLog, events: H.counts, secs: Math.round((Date.now() - performance.timeOrigin) / 1000), ended: H.ended, status: H.engine.status, stageIdx: H.stageIdx, players: Object.values(H.engine.players).map(p => ({ cls: p.cls, ...p.stats })) }; });

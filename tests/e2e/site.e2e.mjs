@@ -25,6 +25,7 @@ await ctx.route('**/*', async route => {
         const m = u.pathname.endsWith('firebase-app.js') ? 'mock-app.js' : u.pathname.endsWith('firebase-auth.js') ? 'mock-auth.js' : 'mock-db.js';
         return route.fulfill({ path: path.join(HERE, m), contentType: 'application/javascript' });
     }
+    if (u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') return route.continue(); // real fonts for honest screenshots
     return route.abort();
 });
 const page = await ctx.newPage();
@@ -38,6 +39,7 @@ await page.goto('http://raid.test/next/index.html');
 await page.waitForSelector('.l-hero');
 await sleep(1800);
 await shot('site-landing');
+await page.screenshot({ path: path.join(OUT, 'site-landing-full.png'), fullPage: true });
 check(await page.isVisible('#nav-in'), 'landing shows teacher sign in');
 await page.fill('#j-code', '12');
 await page.click('#j-go');
@@ -115,6 +117,8 @@ check(stored.questions[0].answers.length === 3 && stored.questions[1].answers[st
 await shot('site-dashboard');
 
 // launch goes straight to the raid lobby
+// (the game page is stubbed so it can't consume the hand-off before we read it)
+await page.route('**/next/play.html*', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }));
 await page.click('.set-card [data-act="launch"]');
 await page.waitForURL(/play\.html\?host=1/);
 const launched = await page.evaluate(() => JSON.parse(localStorage.getItem('rr_launch_questions')).length);

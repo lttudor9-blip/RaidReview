@@ -50,56 +50,124 @@ function renderNav() {
 
 // ================================================================= landing
 
+// The squad formation: four crests linked to a synergy core (hero art)
+function squadArt() {
+    const pos = { WARRIOR: [50, 12], GUARDIAN: [88, 50], MEDIC: [50, 88], TACTICIAN: [12, 50] };
+    const lines = CLASS_IDS.map(c => `<line x1="${pos[c][0]}" y1="${pos[c][1]}" x2="50" y2="50" stroke="${CLASSES[c].color}" />`).join('');
+    const ring = CLASS_IDS.map((c, i) => { const n = CLASS_IDS[(i + 1) % 4]; return `<line x1="${pos[c][0]}" y1="${pos[c][1]}" x2="${pos[n][0]}" y2="${pos[n][1]}" stroke="${CLASSES[c].color}" />`; }).join('');
+    return `<div class="squad-art" aria-hidden="true">
+        <svg class="sa-lines" viewBox="0 0 100 100" preserveAspectRatio="none"><g class="sa-ring">${ring}</g><g class="sa-spokes">${lines}</g></svg>
+        <div class="sa-orbit"></div><div class="sa-orbit two"></div>
+        <div class="sa-core"><div class="sa-mult">×1.35</div><div class="sa-label">SQUAD SYNERGY</div></div>
+        ${CLASS_IDS.map(c => `<div class="sa-node" data-cls="${c}" style="left:${pos[c][0]}%;top:${pos[c][1]}%">${crest(c, { size: 96, glow: true })}<div class="sa-name">${CLASSES[c].name.toUpperCase()}</div><div class="sa-role">${CLASSES[c].role.toUpperCase()}</div></div>`).join('')}
+    </div>`;
+}
+
+const shotFig = (src, alt, caption, cls = '') => `<figure class="shot ${cls}"><img src="img/${src}" alt="${esc(alt)}"><figcaption>${caption}</figcaption></figure>`;
+
 function renderLanding() {
     view.innerHTML = `
     <section class="l-hero">
         <div class="l-hero-copy">
-            <div class="l-kicker">THE CLASSROOM RAID</div>
-            <h1 class="l-title">REVIEW DAY,<br><span>BOSS FIGHT.</span></h1>
-            <p class="l-sub">Your class picks Warriors, Guardians, Medics and Tacticians, answers review questions to power their moves, and takes down giant bosses <b>together</b>. Built by a teacher. Free for teachers.</p>
-            <div class="l-join panel" id="join">
+            <div class="l-kicker">THE CO-OP REVIEW GAME</div>
+            <h1 class="l-title"><span class="l-t1">STUDY FOR THE TEST.</span><br><span class="l-t2">FIGHT FOR THE SQUAD.</span></h1>
+            <p class="l-sub">Raid Review turns review day into a boss raid. The whole class is one team, every right answer powers an attack, and the only way to win is <b>together</b>.</p>
+            <div class="l-teacher">${user
+                ? `<a class="btn gold big" href="#/dashboard">GO TO MY BATTLESETS →</a>`
+                : `<button class="btn gold big" id="l-signup">TEACHERS: START FREE</button><button class="btn ghost big" id="l-signin">SIGN IN</button>`}</div>
+            <div class="l-join" id="join">
                 <div class="label">STUDENTS: JOIN A RAID</div>
                 <div class="l-join-row">
-                    <input class="field code" id="j-code" inputmode="numeric" maxlength="6" placeholder="CODE">
-                    <input class="field" id="j-name" maxlength="16" placeholder="Your name">
-                    <button class="btn gold big" id="j-go">JOIN</button>
+                    <input class="field code" id="j-code" inputmode="numeric" maxlength="6" placeholder="CODE" aria-label="Room code">
+                    <input class="field" id="j-name" maxlength="16" placeholder="Your name" aria-label="Your name">
+                    <button class="btn primary" id="j-go">JOIN</button>
                 </div>
                 <div class="l-err" id="j-err"></div>
             </div>
-            <div class="l-teacher">${user
-                ? `<a class="btn primary big" href="#/dashboard">GO TO MY BATTLESETS →</a>`
-                : `<button class="btn primary big" id="l-signup">I'M A TEACHER: START FREE</button><button class="btn ghost big" id="l-signin">SIGN IN</button>`}</div>
         </div>
-        <div class="l-hero-art">
-            <canvas id="l-boss"></canvas>
-            <div class="l-crests">${CLASS_IDS.map(c => crest(c, { size: 74, glow: true })).join('')}</div>
+        <div class="l-hero-art">${squadArt()}</div>
+    </section>
+
+    <div class="l-facts">${['Built for Chromebooks', 'No student accounts', 'Call signs, never real names', 'Free for teachers'].map(t => `<span>◆ ${t}</span>`).join('')}</div>
+
+    <section class="l-section">
+        <div class="l-kick2">HOW IT'S DIFFERENT</div>
+        <h2 class="l-h2">NOT ANOTHER RACE TO THE BUZZER</h2>
+        <p class="l-lead">In most review games, students race each other and the fastest few win. In Raid Review the class races the boss, and every student has a job only they can do.</p>
+        <div class="vs">
+            <div class="vs-head"><span></span><span class="vs-them">TYPICAL QUIZ GAME</span><span class="vs-us">RAID REVIEW</span></div>
+            ${[
+                ['Who wins', 'The fastest few kids', 'The whole class, or nobody'],
+                ['A wrong answer', 'You drop down the leaderboard', 'You see the right answer, and your squad covers for you'],
+                ['Quiet students', 'Check out once they fall behind', 'Heal, shield and set up combos the team can\'t win without'],
+                ['Talking', 'Gets in the way', 'Is the strategy'],
+                ['Afterwards', 'A podium', 'A list of the questions your class missed most, ready to reteach']
+            ].map(([k, a, b]) => `<div class="vs-row"><span class="vs-k">${k}</span><span class="vs-them">${a}</span><span class="vs-us">${b}</span></div>`).join('')}
         </div>
     </section>
 
     <section class="l-section">
-        <div class="l-h2">FOUR CLASSES. ONE SQUAD.</div>
+        <div class="l-kick2">SEE IT IN ACTION</div>
+        <h2 class="l-h2">ONE BOSS. ONE CLASS. EVERY CHROMEBOOK MATTERS.</h2>
+        <div class="shots">
+            ${shotFig('projector-rolecall.webp', 'Projector during a boss fight, calling on the Guardians', '<b>The projector.</b> The whole class fights one boss. Before a big attack it calls a class by name, and they have seconds to answer.', 'wide')}
+            ${shotFig('chromebook-warrior.webp', 'A Warrior student\'s Chromebook mid-fight', '<b>Every Chromebook.</b> Answer the question to power your next move. Each class\'s screen looks and plays differently.')}
+            ${shotFig('projector-hero.webp', 'A hero moment on the projector', '<b>Hero moments.</b> Clutch saves, perfect combos and flawless kills go up on the big screen.')}
+        </div>
+    </section>
+
+    <section class="l-section">
+        <div class="l-kick2">FOUR CLASSES</div>
+        <h2 class="l-h2">EVERYONE HAS A JOB</h2>
         <div class="l-classes">${CLASS_IDS.map(id => `
-            <div class="l-class" data-cls="${id}">${crest(id, { size: 96, glow: true })}
+            <div class="l-class" data-cls="${id}">${crest(id, { size: 72, glow: true })}
                 <div class="l-class-name">${CLASSES[id].name.toUpperCase()}</div>
-                <div class="label">${CLASSES[id].role} · ${CREST_NAMES[id]}</div>
-                <p>${esc({ WARRIOR: 'Biggest hits in the raid. Lines up SHATTER combos with the Tacticians.', GUARDIAN: 'Sees who the boss is about to hit and shields them in time.', MEDIC: 'Watches everyone\'s vitals, heals the lowest, and revives the fallen.', TACTICIAN: 'Sees the boss\'s next move first and Exposes it so everyone hits harder.' }[id])}</p>
+                <div class="label">${CLASSES[id].role}</div>
+                <p>${esc({ WARRIOR: 'Biggest hits in the raid. Lines up SHATTER combos with the Tacticians.', GUARDIAN: 'Sees who the boss is about to hit and shields them in time.', MEDIC: 'Watches everyone\'s health, heals the lowest, and revives the fallen.', TACTICIAN: 'Sees the boss\'s next move first and exposes it so everyone hits harder.' }[id])}</p>
             </div>`).join('')}</div>
     </section>
 
-    <section class="l-section">
-        <div class="l-h2">HOW A RAID WORKS</div>
-        <div class="l-steps">
-            ${[['1', 'Pick a BattleSet', 'Type questions, paste a list, or import a Quizlet or spreadsheet in seconds.'],
-               ['2', 'Students join', 'They enter the code on their Chromebooks and lock in a class.'],
-               ['3', 'Answer to attack', 'Every right answer powers a move. Wrong answers show the right one.'],
-               ['4', 'Talk to win', 'Bosses call on classes by name. Squads that communicate win.']]
-                .map(([n, t, d]) => `<div class="l-step"><div class="l-step-n">${n}</div><div class="l-step-t">${t}</div><p>${d}</p></div>`).join('')}
+    <section class="l-section l-puzzles">
+        <div class="l-kick2">RAID PUZZLES</div>
+        <h2 class="l-h2">NOBODY SOLVES THEM ALONE</h2>
+        <p class="l-lead">Between bosses the class hits a puzzle. Each class holds one piece of the answer on its own Chromebook, so the room has to talk to get through.</p>
+        <div class="pz-cards">
+            <div class="pz-card">
+                ${shotFig('puzzle-vault.webp', 'The Vault puzzle on the projector', '')}
+                <div class="pz-body"><div class="pz-name">THE VAULT</div>
+                <p>A four-symbol code. Every class gets the clue for a slot that <b>another</b> class has to enter, and the clues point at a symbol wall on the projector. Students shout across the room to crack it. Three wrong codes trip the alarm.</p></div>
+            </div>
+            <div class="pz-card">
+                ${shotFig('puzzle-reactor.webp', 'The Reactor Core puzzle on a Tactician\'s Chromebook', '')}
+                <div class="pz-body"><div class="pz-name">REACTOR CORE</div>
+                <p>Only the Tacticians can see the order the classes must press in. Everyone else has one big button and has to listen. One press out of turn surges the core and resets the round.</p></div>
+            </div>
+        </div>
+        <div class="stakes">
+            <div class="ok"><b>SOLVE IT</b><span>Full heal and a power-up for the next boss.</span></div>
+            <div class="bad"><b>FAIL IT</b><span>No heal, and the next boss gets tougher. Every choice carries forward.</span></div>
         </div>
     </section>
 
-    <section class="l-section l-two">
-        <div class="panel"><div class="l-h3">★ HERO MOMENTS</div><p>When a Medic's Field Hospital saves a squad on the brink, or a Tactician sets up a Warrior's SHATTER, the whole room sees it on the projector.</p></div>
-        <div class="panel"><div class="l-h3">📋 KNOW WHAT TO RETEACH</div><p>Every raid ends with the most-missed questions and the wrong answer students picked most, plus a one-click re-raid of just those.</p></div>
+    <section class="l-section">
+        <div class="l-kick2">FOR TEACHERS</div>
+        <h2 class="l-h2">SET UP IN MINUTES. LEARN FROM EVERY RAID.</h2>
+        <div class="l-teach">
+            <div class="panel teach-report">${shotFig('reteach-report.webp', 'End-of-raid report with the most missed questions', '<b>Know what to reteach.</b> Every raid ends with the questions your class missed most and the wrong answer they picked, plus a one-click re-raid of just those.')}</div>
+            <div class="teach-list">
+                ${[
+                    ['Bring your own questions', 'Type them, paste a list, or import from Quizlet, Google Sheets or Excel.'],
+                    ['Three difficulty levels', 'Elementary for a new class or tough material, Regular for a real raid, Heroic for veterans.'],
+                    ['Private by default', 'Students join with a code. Everyone gets a call sign on screen, never their real name.'],
+                    ['You run the room', 'Pause any time, lock the room, and call in an air strike if a squad needs a hand.']
+                ].map(([t, d]) => `<div class="teach-item"><div class="ti-t">${t}</div><p>${d}</p></div>`).join('')}
+            </div>
+        </div>
+    </section>
+
+    <section class="l-final">
+        <h2 class="l-h2">YOUR NEXT REVIEW DAY IS A RAID.</h2>
+        ${user ? `<a class="btn gold big" href="#/dashboard">GO TO MY BATTLESETS →</a>` : `<button class="btn gold big" id="l-signup2">START FREE</button>`}
     </section>
     <footer class="l-foot">RAID REVIEW · Built by a teacher, for teachers</footer>`;
 
@@ -107,13 +175,8 @@ function renderLanding() {
     document.getElementById('j-go').onclick = go;
     document.getElementById('j-name').onkeydown = e => { if (e.key === 'Enter') go(); };
     document.getElementById('j-code').onkeydown = e => { if (e.key === 'Enter') document.getElementById('j-name').focus(); };
-    const su = document.getElementById('l-signup'); if (su) su.onclick = () => openAuth('signup');
+    for (const id of ['l-signup', 'l-signup2']) { const b = document.getElementById(id); if (b) b.onclick = () => openAuth('signup'); }
     const si = document.getElementById('l-signin'); if (si) si.onclick = () => openAuth('signin');
-    if (window.BossRenderer) {
-        const b = window.BossRenderer.create(document.getElementById('l-boss'), 'omega', { maxDpr: 1.5 });
-        b.intro(1600);
-        const cycle = setInterval(() => { if (!document.getElementById('l-boss')) { clearInterval(cycle); b.destroy(); return; } b.windUp(2200); setTimeout(() => b.release(), 2200); }, 7000);
-    }
 }
 
 async function joinRaid() {

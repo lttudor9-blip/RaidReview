@@ -23,7 +23,7 @@ const TICK_MS = 250;
 export async function startHost({ questions, title, hostUid }) {
     const H = {
         code: null, questions, title,
-        settings: { difficulty: 'regular', format: 'standard', shuffle: true, callsigns: false, locked: false },
+        settings: { difficulty: 'regular', format: 'standard', shuffle: true, callsigns: true, locked: false }, // call signs on: no real names on screen
         engine: null, room: null,
         stageIdx: -1, stage: null,          // { kind, id, phase, t0 }
         processed: new Set(), pending: {}, last: {},
@@ -498,6 +498,7 @@ function renderLobby(H) {
     tog('#t-shuffle', 'shuffle', () => updateRoom(H.code, { 'meta/shuffle': s.shuffle }));
     tog('#t-callsigns', 'callsigns', () => {
         for (const p of Object.values(H.engine.players)) p.name = displayName(H, p.id, H.room?.players?.[p.id]?.profile?.name || p.name);
+        updateRoom(H.code, { 'meta/callsigns': s.callsigns }).catch(() => {});
         renderLobbySquad(H);
     });
     tog('#t-lock', 'locked', () => updateRoom(H.code, { 'meta/locked': s.locked }));
