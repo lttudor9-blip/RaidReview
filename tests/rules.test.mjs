@@ -186,3 +186,14 @@ test('pausing shifts boss timers so nothing fires early', () => {
     assert.equal(s.boss.attack.landsAt, lands + 60000);
     assert.ok(tick(s, lands, seededRng(2)).every(e => e.type !== 'attack'));
 });
+
+test('a teammate\'s shield that blocks a boss hit counts as a save for the Guardian', () => {
+    const s = raid();
+    answer(s, 'p1', true, 0);
+    act(s, 'p1', { ability: 'special', target: 'p0' }, 0);
+    s.boss.attack = { id: 'saw', name: 'SAW SWING', kind: 'strike', targets: ['p0'], landsAt: 10, call: null };
+    const ev = tick(s, 10, seededRng(1));
+    const block = ev.find(e => e.type === 'shieldBlock');
+    assert.equal(block.by, 'p1');
+    assert.equal(s.players.p1.stats.saves, 1);
+});

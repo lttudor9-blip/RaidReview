@@ -89,6 +89,8 @@ export const ACHIEVEMENTS = {
     revive1: 'SECOND CHANCE',
     revive3: 'GUARDIAN ANGEL',
     bodyguard: 'BODYGUARD',
+    save: 'CLUTCH SAVE',
+    save3: 'HUMAN SHIELD',
     medic: 'FIELD MEDIC',
     weakpoint: 'WEAK POINT FOUND',
     ult: 'ULTIMATE POWER',
@@ -103,7 +105,7 @@ const DESCS = {
     legendary: 'Land a legendary-tier hit', streak5: '5 right in a row', streak10: '10 right in a row', streak20: '20 right in a row',
     quick: 'Right answer in under 3 seconds', scholar: '10 right answers', brainiac: '25 right answers', encyclopedia: '50 right answers',
     clutch: 'Answer right while under 20% HP', call: 'Answer a boss role call', saver: 'Help stop a boss attack', revive1: 'Revive a teammate',
-    revive3: 'Revive 3 teammates', bodyguard: 'Shield 5 teammates', medic: 'Heal 3 teammates', weakpoint: 'Expose the boss 3 times',
+    revive3: 'Revive 3 teammates', bodyguard: 'Shield 5 teammates', save: 'Your shield blocks a boss hit on a teammate', save3: 'Make 3 clutch saves', medic: 'Heal 3 teammates', weakpoint: 'Expose the boss 3 times',
     ult: 'Use your ultimate', synergy: 'Fight with all four classes at once', comeback: 'Get back up after going down', spirit: 'Keep answering after you\'re out',
     untouchable: 'Beat a boss without going down', interrupt: 'Interrupt a boss attack'
 };

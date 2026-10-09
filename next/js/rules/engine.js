@@ -39,7 +39,7 @@ export function addPlayer(state, pid, { name, cls }) {
         hp: maxHp, maxHp, lives: PLAYER_LIVES, status: 'alive',
         ult: 0, cd: 0, streak: 0, armed: false,
         shield: false, infected: 0, revive: 0,
-        stats: { dmg: 0, heal: 0, shields: 0, correct: 0, wrong: 0, downs: 0, revives: 0, bestStreak: 0, ults: 0, roleCalls: 0 }
+        stats: { dmg: 0, heal: 0, shields: 0, saves: 0, correct: 0, wrong: 0, downs: 0, revives: 0, bestStreak: 0, ults: 0, roleCalls: 0 }
     };
     return state.players[pid];
 }
@@ -167,6 +167,7 @@ export function act(state, pid, { ability, target } = {}, now) {
         case 'shield': {
             if (ally.status !== 'alive') return [{ type: 'rejected', pid, reason: 'target is down' }];
             ally.shield = true;
+            ally.shieldBy = p.id; // remember who to credit when it blocks a hit
             p.stats.shields++;
             p.ult = Math.min(100, p.ult + ULT_PER_SUPPORT);
             ev.push({ type: 'shield', pid, target: ally.id });
@@ -249,7 +250,14 @@ function knockDown(state, p, ev) {
 
 function damagePlayer(state, p, amount, ev, source) {
     if (p.status !== 'alive') return;
-    if (p.shield) { p.shield = false; ev.push({ type: 'shieldBlock', pid: p.id, source }); return; }
+    if (p.shield) {
+        // a shield from a teammate that eats a boss hit is a SAVE
+        const by = p.shieldBy && p.shieldBy !== p.id && state.players[p.shieldBy] ? p.shieldBy : null;
+        if (by) state.players[by].stats.saves++;
+        p.shield = false; p.shieldBy = null;
+        ev.push({ type: 'shieldBlock', pid: p.id, source, by, amount });
+        return;
+    }
     p.hp -= amount;
     ev.push({ type: 'playerHit', pid: p.id, amount, source });
     if (p.hp <= 0) knockDown(state, p, ev);

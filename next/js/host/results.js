@@ -7,7 +7,7 @@ import { mount, esc, fmtNum } from '../ui.js';
 const AWARDS = [
     { title: 'RAID MVP', stat: p => p.stats.dmg, fmt: v => `${fmtNum(v)} damage` },
     { title: 'LIFESAVER', stat: p => p.stats.heal + p.stats.revives * 500, fmt: (v, p) => `${fmtNum(p.stats.heal)} healed · ${p.stats.revives} revives` },
-    { title: 'WALL OF STEEL', stat: p => p.stats.shields, fmt: v => `${v} shields` },
+    { title: 'WALL OF STEEL', stat: p => (p.stats.saves || 0) * 3 + p.stats.shields, fmt: (v, p) => `${p.stats.saves || 0} clutch saves · ${p.stats.shields} shields` },
     { title: 'CLUTCH CALLER', stat: p => p.stats.roleCalls, fmt: v => `${v} role calls answered` },
     { title: 'BIG BRAIN', stat: p => p.stats.correct, fmt: (v, p) => `${v} correct · ${accuracy(p)}% accuracy` },
     { title: 'ON FIRE', stat: p => p.stats.bestStreak, fmt: v => `${v} in a row`, min: 5 }

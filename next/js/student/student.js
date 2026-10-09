@@ -558,7 +558,7 @@ function effect(ev) {
     const me = S.pid, layer = $('#dmg-layer');
     const pub = S.me.pub, c = CLASSES[pub.cls];
     const by = id => esc(S.room.players?.[id]?.pub?.name || 'A teammate');
-    S.counters ||= { shields: 0, heals: 0, revives: 0, exposes: 0 };
+    S.counters ||= { shields: 0, heals: 0, revives: 0, exposes: 0, saves: 0 };
     switch (ev.type) {
         case 'hit': if (ev.pid === me) {
             const legendary = !!ev.combo || ev.amount >= 8000;
@@ -579,7 +579,14 @@ function effect(ev) {
             if (ev.pid === me) { textPop(layer, '◆ SHIELD UP', '#7d95ff'); if (++S.counters.shields >= 5) unlock('bodyguard'); }
             if (ev.target === me && ev.pid !== me) { textPop(layer, '◆ SHIELDED', '#7d95ff', 2.4); toast(`${by(ev.pid)} shielded you`); }
             break;
-        case 'shieldBlock': if (ev.pid === me) { textPop(layer, 'BLOCKED!', '#7d95ff', 2.8); Audio.sfxShield(); } break;
+        case 'shieldBlock':
+            if (ev.pid === me) { textPop(layer, 'BLOCKED!', '#7d95ff', 2.8); Audio.sfxShield(); if (ev.by) toast(`${by(ev.by)}'s shield saved you!`); }
+            if (ev.by === me && ev.pid !== me) {
+                slam('CLUTCH SAVE!', { color: '#7d95ff', sub: `YOUR SHIELD BLOCKED ${fmtNum(ev.amount)} FOR ${by(ev.pid)}` });
+                Audio.sfxShield(); unlock('save');
+                if (++S.counters.saves >= 3) unlock('save3');
+            }
+            break;
         case 'playerHit': if (ev.pid === me) { textPop(layer, `−${fmtNum(ev.amount)}`, '#ff4757', 3); flash('#ff2a3d', 0.4); shake($('#g')); navigator.vibrate && navigator.vibrate(150); } break;
         case 'selfDamage': if (ev.pid === me) textPop(layer, `−${fmtNum(ev.amount)}`, '#ff6b81', 1.6); break;
         case 'revive':

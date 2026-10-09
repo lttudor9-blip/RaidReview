@@ -212,7 +212,16 @@ function visual(H, ev) {
         case 'breach': case 'interrupt':
             if (ev.type === 'interrupt') { boss && boss.cancelWindUp(); floater(layer, 'INTERRUPTED!', { color: CLASSES.TACTICIAN.color, size: '3.2rem', y: 30 }); logFeed(H, `${nameOf(H, ev.pid)} <b>interrupted</b> the boss!`); }
             break;
-        case 'revive': logFeed(H, ev.by ? `${nameOf(H, ev.by)} <b>revived</b> ${nameOf(H, ev.pid)}` : `${nameOf(H, ev.pid)} rebooted`); break;
+        case 'shieldBlock':
+            if (ev.by) {
+                floater(layer, `CLUTCH SAVE! ${H.engine.players[ev.by]?.name || ''}`, { color: CLASSES.GUARDIAN.color, size: '3rem', y: 62 });
+                logFeed(H, `<b style="color:${CLASSES.GUARDIAN.color}">CLUTCH SAVE:</b> ${nameOf(H, ev.by)}'s shield blocked ${fmtNum(ev.amount)} for ${nameOf(H, ev.pid)}`);
+                Audio.sfxShield();
+            }
+            break;
+        case 'revive':
+            if (ev.by) floater(layer, `${H.engine.players[ev.by]?.name || ''} REVIVED ${H.engine.players[ev.pid]?.name || ''}!`, { color: CLASSES.MEDIC.color, size: '2.6rem', y: 66 });
+            logFeed(H, ev.by ? `${nameOf(H, ev.by)} <b>revived</b> ${nameOf(H, ev.pid)}` : `${nameOf(H, ev.pid)} rebooted`); break;
         case 'down': logFeed(H, `<b style="color:#ff4757">${nameOf(H, ev.pid)} is down!</b>`); break;
         case 'eliminated': logFeed(H, `${nameOf(H, ev.pid)} is out — now a spirit`); break;
         case 'windup': {
