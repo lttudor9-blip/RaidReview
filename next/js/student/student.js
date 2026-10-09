@@ -556,7 +556,7 @@ function banners(now) {
     if (S.live.team?.dome > now) out.push(`<div class="banner" style="--bc:${CLASSES.GUARDIAN.color}">◆ IRON DOME: the squad is invulnerable <span class="bt">${secs(S.live.team.dome)}s</span></div>`);
     if (w && !sh && w.cls !== pub.cls) out.push(`<div class="banner" style="--bc:${CLASSES[w.cls].color}">🎯 WEAK SPOT: ${CLASSES[w.cls].name.toUpperCase()}S deal ×${w.mult} damage <span class="bt">${secs(w.until)}s</span></div>`);
     if (b && b.exposedUntil > now && pub.cls !== 'WARRIOR') out.push(`<div class="banner" style="--bc:${CLASSES.TACTICIAN.color}">BOSS EXPOSED: everyone deals +25% <span class="bt">${secs(b.exposedUntil)}s</span></div>`);
-    return out.slice(0, 3).join('');
+    return out.slice(0, 2).join(''); // two at most: the answers always come first
 }
 
 function renderSquad(now) {
@@ -650,6 +650,13 @@ function waveClear(box, center) {
     </div>`;
 }
 
+// Going down or getting revived sends you back to answering, but never swaps
+// out a question you're in the middle of (or one whose result is still showing)
+function backToQuestion() {
+    if (S.local !== 'feedback') S.local = 'question';
+    S.lastKey = null;
+}
+
 function nextQuestion() {
     const i = S.deck();
     const q = S.questions[i];
@@ -664,7 +671,7 @@ function drawQuestion(box) {
     const pub = S.me.pub;
     const kicker = pub.status === 'down' ? 'ANSWER TO REBOOT' : pub.status === 'out' ? 'ANSWER TO POWER THE RALLY' : 'ANSWER TO ATTACK';
     box.innerHTML = `<div class="qbox"><div class="label">${kicker}</div><div class="qt">${esc(q.text)}</div></div>
-        <div class="answers arming ${q.answers.length === 2 ? 'two' : ''}" id="g-ans">${order.map((orig, k) => `<button class="answer" data-k="${k}"><span class="ak">${q.answers.length === 2 ? (k ? 'B' : 'A') : 'ABCD'[k]}</span><span class="at">${esc(q.answers[orig])}</span></button>`).join('')}</div>`;
+        <div class="answers ${S.q.armedAt ? '' : 'arming'} ${q.answers.length === 2 ? 'two' : ''} ${q.answers.length > 2 && q.answers.some(a => a.length > 38) ? 'long' : ''}" id="g-ans">${order.map((orig, k) => `<button class="answer" data-k="${k}"><span class="ak">${q.answers.length === 2 ? (k ? 'B' : 'A') : 'ABCD'[k]}</span><span class="at">${esc(q.answers[orig])}</span></button>`).join('')}</div>`;
     $('#g-ans').onclick = e => {
         const btn = e.target.closest('.answer');
         if (!btn || S.local !== 'question' || $('#g-ans').classList.contains('arming')) return;
@@ -672,7 +679,8 @@ function drawQuestion(box) {
     };
     // answers fade in and only become tappable once visible (stops auto-clickers
     // without silently eating a fast student's tap)
-    setTimeout(() => { const g = $('#g-ans'); if (g) { g.classList.remove('arming'); S.q && (S.q.armedAt = Date.now()); } }, 400);
+    // (a redraw of the same question, e.g. when you're revived, shows it straight away)
+    if (!S.q.armedAt) { const mine = S.q; setTimeout(() => { const g = $('#g-ans'); if (g && S.q === mine) { g.classList.remove('arming'); mine.armedAt = Date.now(); } }, 400); }
 }
 
 function pick(k, btn) {
@@ -713,7 +721,9 @@ function pick(k, btn) {
         Audio.sfxWrong(); shake($('#g'));
     }
     const alive = pub.status === 'alive';
+    const answered = S.q;
     setTimeout(() => {
+        if (S.q !== answered || S.local !== 'feedback') return; // the screen moved on (puzzle, new stage) in the meantime
         S.q = null;
         S.local = correct && alive ? 'action' : 'question';
         S.lastKey = null;
@@ -881,10 +891,10 @@ function effect(ev) {
         case 'playerHit': if (ev.pid === me) { textPop(layer, `−${fmtNum(ev.amount)}`, '#ff4757', 3); flash('#ff2a3d', 0.4); edge('#ff2a3d'); shake($('#g')); navigator.vibrate && navigator.vibrate(150); } break;
         case 'selfDamage': if (ev.pid === me) textPop(layer, `−${fmtNum(ev.amount)}`, '#ff6b81', 1.6); break;
         case 'revive':
-            if (ev.pid === me) { slam('BACK IN THE FIGHT!', { color: '#2ed573', sub: ev.by ? `REVIVED BY ${by(ev.by)}` : 'REBOOTED' }); flash('#2ed573', 0.4); edge('#2ed573'); unlock('comeback'); S.local = 'question'; S.q = null; S.lastKey = null; }
+            if (ev.pid === me) { slam('BACK IN THE FIGHT!', { color: '#2ed573', sub: ev.by ? `REVIVED BY ${by(ev.by)}` : 'REBOOTED' }); flash('#2ed573', 0.4); edge('#2ed573'); unlock('comeback'); backToQuestion(); }
             if (ev.by === me && ev.pid !== me) { textPop(layer, 'REVIVED!', '#2ed573', 2.8); if (++S.counters.revives >= 1) unlock('revive1'); if (S.counters.revives >= 3) unlock('revive3'); }
             break;
-        case 'down': if (ev.pid === me) { S.downThisBoss = true; S.streak = 0; slam("YOU'RE DOWN!", { color: '#ff4757', sub: 'ANSWER TO REBOOT, OR CALL A MEDIC' }); flash('#ff2a3d', 0.6); edge('#ff2a3d'); S.local = 'question'; S.q = null; S.lastKey = null; } break;
+        case 'down': if (ev.pid === me) { S.downThisBoss = true; S.streak = 0; slam("YOU'RE DOWN!", { color: '#ff4757', sub: 'ANSWER TO REBOOT, OR CALL A MEDIC' }); flash('#ff2a3d', 0.6); edge('#ff2a3d'); backToQuestion(); } break;
         case 'eliminated': if (ev.pid === me) { S.downThisBoss = true; slam('OUT OF LIVES', { color: '#9fd0ff', sub: 'YOUR ANSWERS NOW POWER THE TEAM RALLY' }); S.local = 'question'; S.lastKey = null; } break;
         case 'infected': if (ev.pid === me) toast('☣ You are infected! Ask a Medic for a heal'); break;
         case 'cured': if (ev.target === me) toast(`${by(ev.pid)} cured you`); break;

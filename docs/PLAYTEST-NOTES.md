@@ -47,3 +47,11 @@ What was really going on:
 | # | Where | What happened | Fix |
 |---|---|---|---|
 | 8 | Boss fights | Fights dragged on, about twice as long as intended at a real classroom pace | Boss HP is cut about in half, and there are more burst moments: a stagger at 50% on bosses 2 and 3, bigger role-call chunks, and a Last Stand win that takes 15% of the final boss's HP. Then new mechanics that speed fights up when the squad talks: Weak Spot, Sniper Mark, Repair Drones, Silence and Elemental Shield (see REBUILD.md). Typical fights now last 0:50 / 1:20 / 1:30 / 3:00. |
+
+## Playtest 3: full classes with the new boss mechanics
+
+| # | Where | What happened | Fix |
+|---|---|---|---|
+| 9 | Student screen | Some students couldn't see the bottom answers | **Confirmed:** at real Chromebook window sizes (browser bars, 125% display zoom) the answers ran past the bottom of the screen; on a 1366×650 window, answers C and D sat 100px below the edge. The screen now gives the answers room first: the boss picture shrinks or hides, at most two banners show (one on tiny screens), and spacing tightens on short screens. New check: `npm run e2e:layout` loads a real student screen at five window sizes with the worst case on screen at once and fails if any answer is cut off, covered or untappable. |
+| 10 | Student screen | Popups covered the question | The achievement card sat right on top of the question. Achievements and toasts now pop up in the bottom-right corner over the squad list, and the big center text is smaller on short screens and stays inside the boss area. |
+| 11 | Student screen | Questions switched to a different one before the student answered | **Confirmed:** getting knocked down or revived threw away the current question and dealt a new one. If it happened while the "wrong answer" result was showing, a timer swapped the question again 1.7s later. Every screen redraw also faded the answers out and back in. Now the current question stays until it's answered, the timer can't replace a question it doesn't own, and a redraw never re-fades answers that were already showing. |

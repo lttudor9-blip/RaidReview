@@ -911,3 +911,52 @@ body[data-screen="game"] .fs-pill, body[data-screen="end"] .fs-pill { display: n
 .sl-note { flex: 1; display: grid; place-items: center; font-family: var(--display); font-size: 1.6rem; color: #ffd36b; }
 .sl-tree { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
 .sl-perk { padding: 4px 10px; border-radius: 10px; border: 2px solid var(--rc); background: rgba(0, 0, 0, 0.4); font-family: var(--display); font-size: 0.7rem; font-weight: 700; }
+
+/* ============================================================
+   ANSWERS FIRST: every answer stays on screen and tappable on any
+   Chromebook window (browser bars, 125% zoom, half-screen). The boss
+   picture shrinks first; banners are capped; popups stay off the answers.
+   ============================================================ */
+.sg { height: 100vh; height: 100dvh; }
+.sg-main { height: 100%; overflow-y: auto; overflow-x: hidden; }
+.sg-hud, .sg-banners { flex: 0 0 auto; }
+.sg-stage { flex: 1 1 0; min-height: 0; }
+.sg-controls { flex: 0 0 auto; min-height: 0; }
+.sg-controls .answers { flex: 0 0 auto; }
+.sg-controls .answer { min-height: 62px; padding: 10px 12px; }
+.answers.long .answer { font-size: clamp(0.95rem, 1.6vw, 1.15rem); }
+.banner.big { font-size: 1rem; padding: 9px 14px; }
+.banner .bt { font-size: 1.1rem; }
+/* the boss picture is decoration: when there's no room for it, it gives way */
+@media (max-height: 760px) {
+    .sg-hud { padding: 6px 14px; gap: 10px; }
+    .hudbar { height: 22px; }
+    .iconbtn { width: 32px; height: 32px; font-size: 0.95rem; }
+    .sg-banners { gap: 4px; padding-top: 6px; }
+    .banner, .banner.big { padding: 6px 12px; font-size: 0.85rem; }
+    .banner .bt { font-size: 1rem; }
+    .sg-controls { padding: 6px 14px 10px; gap: 8px; }
+    .qbox { padding: 8px 14px; }
+    .qbox .qt { font-size: clamp(1.05rem, 2.2vw, 1.4rem); }
+    .sg-controls .answer { min-height: 52px; padding: 8px 10px; font-size: clamp(0.95rem, 1.8vw, 1.15rem); }
+    .act-grid .act { min-height: 0; }
+    .intel { top: 26px; padding: 6px 10px; font-size: 0.85rem; }
+}
+@media (max-height: 600px) {
+    .sg-banners .banner:nth-child(n+2) { display: none; } /* one banner on tiny screens */
+    .intel { display: none; }
+    .sg-controls .answer { min-height: 46px; }
+    .qbox .label { display: none; }
+}
+/* popups never sit on top of the answers */
+#achv { left: auto; right: 16px; top: auto; bottom: 16px; margin-left: 0; width: 258px; z-index: 70; padding: 10px 14px; }
+#achv .achv-icon { font-size: 1.6rem; }
+#achv .achv-name { font-size: 0.95rem; }
+#achv .achv-desc { font-size: 0.78rem; }
+body[data-screen="game"] .toasts { top: auto; bottom: 16px; left: auto; right: 16px; transform: none; align-items: flex-end; max-width: 258px; }
+#slam .slam-text { font-size: clamp(1.8rem, 6vw, 4.4rem); }
+@media (max-height: 760px) { #slam .slam-text { font-size: clamp(1.6rem, 4.5vw, 3rem); } #slam .slam-sub { font-size: 0.8rem; } }
+@media (max-width: 820px) {
+    #achv { right: 8px; left: auto; top: 6px; bottom: auto; margin: 0; width: 240px; }
+    body[data-screen="game"] .toasts { top: 6px; bottom: auto; right: 8px; }
+}
