@@ -11,6 +11,7 @@ import { createRoom, listenRoom, updateRoom } from '../net/room.js';
 import { AudioEngine as Audio } from '../audio.js';
 import { mount, esc, $, floater, flash, shake, fmtNum, fmtClock, pct, toast, setHTML, toggleFullscreen } from '../ui.js';
 import { renderResults } from './results.js';
+import { runCeremony } from './ceremony.js';
 import { crest } from '../content/crests.js';
 import { heroText, heroColor } from '../content/heroes.js';
 import { startPuzzle, puzzleInput, tickPuzzle, applyPuzzleOutcome } from '../rules/puzzles.js';
@@ -168,7 +169,7 @@ function flush(H) {
     const live = {
         status: e.status, raidLives: e.raidLives, regroupUntil: e.regroupUntil,
         stage: H.stage, stageCount: H.stages ? H.stages.length : 0, stageIdx: H.stageIdx,
-        boss: e.boss, team: e.team, paused: H.paused, fx: H.fx, puzzle: e.puzzle || null, mods: e.nextMods || null, perks: e.perks || null,
+        boss: e.boss, team: e.team, paused: H.paused, ending: H.ending || null, fx: H.fx, puzzle: e.puzzle || null, mods: e.nextMods || null, perks: e.perks || null,
         upgrade: H.vote ? { offers: H.vote.offers, tally: tally(H.vote, e), endsAt: H.vote.endsAt, phase: H.stage?.phase || 'vote', winners: H.vote.winners || null } : null,
         clock: H.clockAt // students sync their countdowns to the host's clock (sent every few seconds, not every tick)
     };
@@ -204,6 +205,10 @@ function nameOf(H, pid) { return esc(H.engine.players[pid]?.name || '?'); }
 function handle(H, events) {
     for (const ev of events) {
         H.counts[ev.type] = (H.counts[ev.type] || 0) + 1;
+        if (ev.type === 'bossStart' && !H.raidStartedAt) H.raidStartedAt = Date.now();
+        // per-class tallies for the end ceremony ("what each class did")
+        const who = H.engine.players[ev.type === 'ricochet' ? ev.by : ev.pid];
+        if (who) { const c = ((H.byClass ||= {})[who.cls] ||= {}); c[ev.type] = (c[ev.type] || 0) + 1; }
         if (TEAM_FX.has(ev.type)) {
             H.fx.push({ s: ++H.fxSeq, ...ev });
             if (H.fx.length > 25) H.fx.shift();
@@ -446,10 +451,12 @@ function endRaid(H, won) {
     H.ended = true;
     H.stage = { kind: 'end', id: won ? 'victory' : 'defeat', phase: 'end', t0: Date.now() };
     H.engine.status = won ? 'victory' : 'defeat';
+    hideOverlay(H);
+    if (H.boss) { H.boss.destroy(); H.boss = null; }
     Audio.muffle(false);
     Audio.music(won ? 'victory' : 'defeat', { restart: true, stinger: won ? 'bossDown' : 'wipe' });
     flush(H);
-    renderResults(H, won);
+    runCeremony(H, won, D => { flush(H); renderResults(H, won, D); });
 }
 
 function togglePause(H) {

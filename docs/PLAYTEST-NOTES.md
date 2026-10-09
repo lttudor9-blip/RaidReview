@@ -57,3 +57,7 @@ What was really going on:
 | 11 | Student screen | Questions switched to a different one before the student answered | **Confirmed:** getting knocked down or revived threw away the current question and dealt a new one. If it happened while the "wrong answer" result was showing, a timer swapped the question again 1.7s later. Every screen redraw also faded the answers out and back in. Now the current question stays until it's answered, the timer can't replace a question it doesn't own, and a redraw never re-fades answers that were already showing. |
 
 **Result:** students loved it, and the pacing feels much better since the anti-sponge pass and the new boss mechanics.
+
+| # | Where | What happened | Fix |
+|---|---|---|---|
+| 12 | End of the raid | Classes go wild when they beat the final boss, but the end screen was flat: it went straight to a results page | New **end ceremony** on the projector (`next/js/host/ceremony.js`), about 40 seconds and skippable. It plays in beats: **VICTORY** slams in over every class crest with confetti. The squad's totals count up, then a **RAID RANK** (S/A/B/C/D) stamps down. Next, what each class did, then the awards one at a time ("AND IT GOES TO…"). Each beat is synced to the Chromebooks: the winner's own screen lights up gold with **YOU WON** at the same moment the projector reveals the award. The rank comes from things the class controls: accuracy, raid lives kept, role calls answered and puzzles solved. A lost raid gets its own version ("SO CLOSE: the boss had only 12% left"). |

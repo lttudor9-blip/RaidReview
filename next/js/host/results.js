@@ -7,20 +7,7 @@ import { crest } from '../content/crests.js';
 import { heroColor } from '../content/heroes.js';
 import { PUZZLES } from '../content/puzzles.js';
 import { PERKS, RARITY } from '../content/perks.js';
-
-const AWARDS = [
-    { title: 'RAID MVP', stat: p => p.stats.dmg, fmt: v => `${fmtNum(v)} damage` },
-    { title: 'LIFESAVER', stat: p => p.stats.heal + p.stats.revives * 500, fmt: (v, p) => `${fmtNum(p.stats.heal)} healed · ${p.stats.revives} revives` },
-    { title: 'WALL OF STEEL', stat: p => (p.stats.saves || 0) * 3 + p.stats.shields, fmt: (v, p) => `${p.stats.saves || 0} clutch saves · ${p.stats.shields} shields` },
-    { title: 'CLUTCH CALLER', stat: p => p.stats.roleCalls, fmt: v => `${v} role calls answered` },
-    { title: 'BIG BRAIN', stat: p => p.stats.correct, fmt: (v, p) => `${v} correct · ${accuracy(p)}% accuracy` },
-    { title: 'ON FIRE', stat: p => p.stats.bestStreak, fmt: v => `${v} in a row`, min: 5 }
-];
-
-function accuracy(p) {
-    const n = p.stats.correct + p.stats.wrong;
-    return n ? Math.round((p.stats.correct / n) * 100) : 0;
-}
+import { ceremonyData, accuracy, RANK_LINES, RANK_COLORS } from './ceremony.js';
 
 export function missedQuestions(H) {
     return H.questions.map((q, i) => {
@@ -35,16 +22,11 @@ export function missedQuestions(H) {
     }).filter(x => x.w > 0).sort((a, b) => b.pct - a.pct || b.w - a.w);
 }
 
-export function renderResults(H, won) {
+export function renderResults(H, won, D = ceremonyData(H, won)) {
     const ps = Object.values(H.engine.players);
-    const used = new Set();
-    const awards = [];
-    for (const a of AWARDS) {
-        const best = ps.filter(p => !used.has(p.id)).sort((x, y) => a.stat(y) - a.stat(x))[0];
-        if (!best || a.stat(best) <= 0 || (a.min && a.stat(best) < a.min)) continue;
-        used.add(best.id);
-        awards.push({ ...a, p: best, value: a.stat(best) });
-    }
+    const awards = D.awards.map(a => ({ ...a, p: H.engine.players[a.pid] })).filter(a => a.p);
+    const r = D.rank;
+    const time = D.secs ? `${Math.floor(D.secs / 60)}:${String(D.secs % 60).padStart(2, '0')}` : '';
     const missed = missedQuestions(H);
     const totalR = ps.reduce((s, p) => s + p.stats.correct, 0), totalW = ps.reduce((s, p) => s + p.stats.wrong, 0);
     const classAcc = totalR + totalW ? Math.round((totalR / (totalR + totalW)) * 100) : 0;
@@ -54,10 +36,11 @@ export function renderResults(H, won) {
         <div class="results">
             <div style="text-align:center">
                 <div class="display" style="font-size:clamp(3rem,8vw,6rem);color:${won ? '#2ed573' : '#ff4757'};animation:slam .8s both">${won ? 'RAID COMPLETE' : 'RAID FAILED'}</div>
-                <div class="muted" style="font-size:1.3rem">${won ? 'Every boss defeated.' : `The squad made it to stage ${H.stageIdx + 1} of ${H.stages.length}.`} Class accuracy: <b class="gold">${classAcc}%</b> on ${totalR + totalW} answers.</div>
+                <div class="muted" style="font-size:1.3rem">${won ? `Every boss defeated${time ? ` in ${time}` : ''}.` : `The squad made it to stage ${H.stageIdx + 1} of ${H.stages.length}.`} Class accuracy: <b class="gold">${classAcc}%</b> on ${totalR + totalW} answers.</div>
+                ${r ? `<div class="res-rank" style="--rc:${RANK_COLORS[r.letter]}"><span class="l">${r.letter}</span><span><span class="k">RAID RANK</span><b>${RANK_LINES[r.letter]}</b></span></div>` : ''}
             </div>
             ${awards.length && ps.length > 1 ? `<div class="awards">${awards.map(a => `
-                <div class="award" data-cls="${a.p.cls}" style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center">${crest(a.p.cls, { size: 64, glow: true })}<div><div class="aw-title">${a.title}</div><div class="aw-name">${esc(a.p.name)}</div><div class="aw-stat">${CLASSES[a.p.cls].name} · ${a.fmt(a.value, a.p)}</div></div></div>`).join('')}</div>` : ''}
+                <div class="award" data-cls="${a.p.cls}" style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center">${crest(a.p.cls, { size: 64, glow: true })}<div><div class="aw-title">${a.icon} ${a.title}</div><div class="aw-name">${esc(a.p.name)}</div><div class="aw-stat">${CLASSES[a.p.cls].name} · ${esc(a.stat)}</div></div></div>`).join('')}</div>` : ''}
             ${Object.keys(H.engine.perks || {}).length ? `<div class="panel"><div class="label" style="margin-bottom:8px">SQUAD BUILDS: UPGRADES UNLOCKED</div>${Object.entries(H.engine.perks).map(([cls, ids]) => `
                 <div class="missed-row" style="grid-template-columns:auto 1fr;align-items:center">${crest(cls, { size: 40 })}<div style="display:flex;flex-wrap:wrap;gap:8px">${ids.map(id => `<span class="chip" style="color:${RARITY[PERKS[id].rarity].color}">${PERKS[id].icon} ${esc(PERKS[id].name)}</span>`).join('')}</div></div>`).join('')}</div>` : ''}
             ${(H.engine.puzzleLog || []).length ? `<div class="panel"><div class="label" style="margin-bottom:8px">RAID PUZZLES</div>${H.engine.puzzleLog.map(p => `

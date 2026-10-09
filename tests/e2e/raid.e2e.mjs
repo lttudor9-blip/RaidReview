@@ -201,7 +201,24 @@ while (Date.now() - t0 < 6 * 60000) {
     }
     await sleep(350);
 }
-await sleep(2500);
+// ---- end ceremony: every beat on the projector, played along on the Chromebooks ----
+const ceremony = { beats: [], winnerLit: false };
+await host.waitForSelector('#cer', { timeout: 15000 });
+for (let n = 0; n < 20 && await host.$('#cer'); n++) {
+    await sleep(1900); // past each beat's reveal
+    const step = await host.evaluate(() => { const E = window.__rrHost.ending; return E && `${E.step}${E.step === 'award' ? E.shown : ''}`; });
+    if (!step || step === 'results') break;
+    ceremony.beats.push(step);
+    await shot(host, `h19_ceremony_${n}_${step}`);
+    if (step === 'title' || step === 'rank') await shot(students[0], `s20_ceremony_${step}`);
+    if (step.startsWith('award')) {
+        for (const [i, p] of students.entries()) if (await p.$('.end-live.mine')) { ceremony.winnerLit = true; await shot(p, `s21_award_${step}_${CLASSES[i]}`); }
+    }
+    await host.click('#cer-next');
+}
+await host.waitForSelector('.results', { timeout: 15000 });
+await sleep(800);
+console.log('ceremony beats:', ceremony.beats.join(' → '), ceremony.winnerLit ? '(award winners lit up on their own screens)' : '(NO WINNER SCREEN LIT UP)');
 await shot(host, 'h05_results');
 await host.locator('.panel', { hasText: 'MOST MISSED' }).first().screenshot({ path: path.join(OUT, 'h11_reteach.png') }).catch(() => {});
 await shot(students[0], 's06_end');
@@ -215,4 +232,6 @@ const perksOk = ['WARRIOR', 'GUARDIAN', 'MEDIC', 'TACTICIAN'].every(c => (final.
 console.log(perksOk ? 'every class unlocked 3 upgrades' : 'UPGRADES NOT AS EXPECTED: ' + JSON.stringify(final.perks));
 const puzzlesOk = (final.puzzles || []).length === 2 && final.puzzles.every(p => p.solved && p.strikes === 1);
 console.log(puzzlesOk ? 'both puzzles solved after one strike each' : 'PUZZLES NOT AS EXPECTED: ' + JSON.stringify(final.puzzles));
-process.exit(final.ended && !errors.length && puzzlesOk && perksOk ? 0 : 1);
+const ceremonyOk = ceremony.beats.includes('title') && ceremony.beats.includes('rank') && ceremony.beats.some(b => b.startsWith('award')) && ceremony.winnerLit;
+console.log(ceremonyOk ? 'end ceremony played on the projector and student screens' : 'CEREMONY NOT AS EXPECTED');
+process.exit(final.ended && !errors.length && puzzlesOk && perksOk && ceremonyOk ? 0 : 1);

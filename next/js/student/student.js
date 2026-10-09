@@ -15,6 +15,7 @@ import { abilityIcon, ABILITY_STAT, ULT_CALL } from '../content/abilityIcons.js'
 import { heroText, heroColor } from '../content/heroes.js';
 import { drawPuzzle, puzzleKey, puzzleTick } from './puzzle.js';
 import { syncLoot } from './loot.js';
+import { RANK_LINES, RANK_COLORS } from '../host/ceremony.js';
 
 const S = {
     code: null, pid: null, room: null, me: null, live: {},
@@ -106,6 +107,7 @@ function show(screen) {
     } else if (screen === 'classes') updateClassCounts();
     else if (screen === 'waiting') updateWaiting();
     if (screen === 'game') updateGame();
+    if (screen === 'end') updateEnd();
 }
 
 // ================================================================= class select (hero select)
@@ -971,6 +973,48 @@ function effect(ev) {
 
 // ================================================================= end
 
+// The projector's end ceremony, played along on every Chromebook. When the
+// projector announces YOUR award, your own screen goes off.
+function updateEnd() {
+    const el = $('#end-live');
+    if (!el) return;
+    const E = S.live.ending, me = S.pid, won = S.live.status === 'victory';
+    const key = E ? `${E.step}|${E.shown || 0}|${E.rank}` : 'none';
+    if (key === S.endKey) return;
+    S.endKey = key;
+    const awards = E?.awards || [];
+    const myCls = S.me?.pub?.cls || S.me?.profile?.cls;
+    let html = '', mine = false;
+    if (!E || E.step === 'title') {
+        html = won
+            ? '<div class="ek">EYES ON THE PROJECTOR</div><div class="eb" style="color:#ffd36b">VICTORY!</div><div class="es">Every boss defeated. That was ALL of you.</div>'
+            : '<div class="ek">EYES ON THE PROJECTOR</div><div class="eb" style="color:#ff4757">RAID FAILED</div><div class="es">So close. Talk it over and run it back!</div>';
+    } else if (E.step === 'rank' && E.rank) {
+        html = `<div class="ek">YOUR SQUAD'S RAID RANK</div><div class="erank" style="--rc:${RANK_COLORS[E.rank]}">${E.rank}</div><div class="eb" style="font-size:1.6rem">${RANK_LINES[E.rank]}</div>`;
+        Audio.sfxAchievement();
+        if (E.rank === 'S' || E.rank === 'A') confetti(90);
+    } else if (E.step === 'classes') {
+        html = myCls ? `<div class="ek">EVERY CLASS CARRIED</div>${crest(myCls, { size: 90, glow: true })}<div class="eb" style="color:${CLASSES[myCls].color};font-size:1.8rem">THE ${CLASSES[myCls].name.toUpperCase()}S</div><div class="es">Look up: the projector shows what your class did for the squad.</div>` : '';
+    } else if (E.step === 'award') {
+        const a = awards[(E.shown || 1) - 1];
+        if (a && a.pid === me) {
+            mine = true;
+            html = `<div class="ek">THE PROJECTOR IS CALLING YOUR NAME</div><div class="eb" style="color:#ffd36b">YOU WON</div><div class="eb" style="font-size:clamp(1.8rem,5vw,2.8rem)">${a.icon} ${esc(a.title)}!</div><div class="es">Stand up and take a bow.</div>`;
+            setTimeout(() => { confetti(220); Audio.sfxAchievement(); navigator.vibrate && navigator.vibrate([200, 80, 200, 80, 300]); }, 1500); // in time with the projector's reveal
+        } else if (a) {
+            html = `<div class="ek">AWARD ${E.shown} OF ${awards.length}</div><div class="eb" style="font-size:clamp(1.8rem,5vw,2.6rem);color:#ffd36b">${a.icon} ${esc(a.title)}</div><div class="es">And it goes to… look up!</div>`;
+        }
+    } else if (E.step === 'results') {
+        const myAwards = awards.filter(a => a.pid === me);
+        mine = myAwards.length > 0;
+        html = `<div class="ek">${won ? 'RAID COMPLETE' : 'RAID OVER'}</div>
+            ${E.rank ? `<div class="erank" style="--rc:${RANK_COLORS[E.rank]};font-size:3.4rem">${E.rank}</div><div class="es">${RANK_LINES[E.rank]}</div>` : ''}
+            ${myAwards.length ? `<div class="my-awards">${myAwards.map(a => `<span class="chip gold" style="font-size:1rem">${a.icon} ${esc(a.title)}</span>`).join('')}</div>` : `<div class="es" style="margin-top:6px">${won ? 'Great raid! Your stats are below.' : 'Your stats are below. Review what you missed!'}</div>`}`;
+    }
+    el.className = 'end-live' + (mine ? ' mine' : '');
+    el.innerHTML = html;
+}
+
 function renderEnd() {
     const pub = S.me?.pub, st = S.me?.stats;
     const won = S.live.status === 'victory';
@@ -978,9 +1022,9 @@ function renderEnd() {
     const missed = Object.keys(S.myMissed).map(i => S.questions[i]).filter(Boolean);
     const achv = unlockedList();
     if (won) setTimeout(() => confetti(160), 300);
+    S.endKey = null;
     mount(`<div class="screen center" data-cls="${pub?.cls || ''}" style="justify-content:flex-start">
-        <div class="display" style="font-size:2.4rem;margin-top:20px;color:${won ? '#2ed573' : '#ff4757'}">${won ? 'VICTORY!' : 'RAID FAILED'}</div>
-        <div class="muted">Look up at the projector for the awards.</div>
+        <div class="end-live" id="end-live"></div>
         ${st ? `<div class="panel" style="width:min(520px,100%);margin-top:16px;text-align:left;display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div><div class="label">ACCURACY</div><div class="display gold" style="font-size:1.6rem">${acc}%</div></div>
             <div><div class="label">BEST STREAK</div><div class="display" style="font-size:1.6rem">${st.bestStreak}</div></div>

@@ -960,3 +960,64 @@ body[data-screen="game"] .toasts { top: auto; bottom: 16px; left: auto; right: 1
     #achv { right: 8px; left: auto; top: 6px; bottom: auto; margin: 0; width: 240px; }
     body[data-screen="game"] .toasts { top: 6px; bottom: auto; right: 8px; }
 }
+
+/* ============================================================
+   END CEREMONY (projector) — the payoff for the whole raid
+   ============================================================ */
+.cer { position: fixed; inset: 0; display: grid; place-items: center; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 35%, #2a1d00 0%, #120a1e 45%, #05050a 85%); }
+.cer-stage { width: min(1300px, 94vw); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.cer-skip { position: fixed; right: 18px; bottom: 16px; font-size: 0.75rem; opacity: 0.7; }
+.cer-next { position: fixed; left: 18px; bottom: 16px; font-size: 0.75rem; opacity: 0.7; }
+.cer-kicker { font-family: var(--mono); letter-spacing: 0.35em; color: var(--gold); font-size: clamp(0.9rem, 1.4vw, 1.2rem); animation: toastIn 0.4s ease both; }
+.cer-title { font-family: var(--display); font-weight: 900; font-size: clamp(5rem, 15vw, 12rem); line-height: 0.9; letter-spacing: 0.02em; animation: cerSlam 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.cer-title.win { color: #ffd36b; text-shadow: 0 6px 0 #7a4b00, 0 0 80px rgba(255, 176, 32, 0.75); }
+.cer-title.lose { color: #ff4757; text-shadow: 0 6px 0 #4a0a10, 0 0 60px rgba(255, 71, 87, 0.6); }
+.cer-sub { font-size: clamp(1.2rem, 2.2vw, 1.9rem); font-weight: 700; color: var(--ink); animation: toastIn 0.5s 0.9s ease both; }
+.cer-crests { display: flex; gap: clamp(14px, 3vw, 40px); justify-content: center; }
+.cer-crest { animation: cerPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.cer-crest:nth-child(2) { animation-delay: 0.15s; } .cer-crest:nth-child(3) { animation-delay: 0.3s; } .cer-crest:nth-child(4) { animation-delay: 0.45s; }
+@keyframes cerSlam { 0% { opacity: 0; transform: scale(3); } 55% { opacity: 1; transform: scale(0.93); } 100% { transform: scale(1); } }
+@keyframes cerPop { 0% { opacity: 0; transform: translateY(40px) scale(0.5); } 100% { opacity: 1; transform: none; } }
+
+.cer-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%; }
+.cer-total { padding: 18px 10px; border-radius: 18px; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--line-2); animation: cerPop 0.5s both; }
+.cer-total:nth-child(2) { animation-delay: 0.12s; } .cer-total:nth-child(3) { animation-delay: 0.24s; } .cer-total:nth-child(4) { animation-delay: 0.36s; }
+.cer-total .v { font-family: var(--display); font-weight: 900; font-size: clamp(2.2rem, 4.6vw, 4rem); color: var(--gold); font-variant-numeric: tabular-nums; }
+.cer-total .k { font-family: var(--mono); letter-spacing: 0.18em; font-size: 0.8rem; color: var(--ink-2); }
+.cer-acc { font-size: clamp(1.1rem, 1.8vw, 1.5rem); color: var(--ink-2); } .cer-acc b { color: var(--ink); }
+.cer-rank { display: flex; flex-direction: column; align-items: center; padding: 6px 40px 14px; border-radius: 22px; border: 4px solid var(--rc); background: color-mix(in srgb, var(--rc) 14%, rgba(0, 0, 0, 0.6)); box-shadow: 0 0 80px color-mix(in srgb, var(--rc) 55%, transparent); animation: cerSlam 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.cer-rank .k { font-family: var(--mono); letter-spacing: 0.35em; font-size: 0.9rem; color: var(--ink-2); margin-top: 8px; }
+.cer-rank .l { font-family: var(--display); font-weight: 900; font-size: clamp(5rem, 11vw, 9rem); line-height: 1; color: var(--rc); text-shadow: 0 5px 0 #000, 0 0 50px var(--rc); }
+.cer-rank .t { font-family: var(--display); font-weight: 900; font-size: clamp(1.2rem, 2.2vw, 1.8rem); letter-spacing: 0.08em; }
+
+.cer-classes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; width: 100%; }
+.cer-class { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 14px; border-radius: 20px; border: 3px solid var(--cls); background: linear-gradient(180deg, color-mix(in srgb, var(--cls) 22%, transparent), rgba(0, 0, 0, 0.5)); animation: cerPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.cer-class .n { font-family: var(--display); font-weight: 900; font-size: 1.6rem; color: var(--cls); } .cer-class .n span { color: var(--ink-2); font-size: 1rem; }
+.cer-class .line { font-weight: 700; font-size: 1.15rem; min-height: 2.6em; }
+.cer-class .share { width: 100%; height: 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.cer-class .share i { display: block; height: 100%; background: var(--cls); }
+.cer-class .sk { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-3); letter-spacing: 0.08em; }
+
+.cer-award-title { font-family: var(--display); font-weight: 900; font-size: clamp(3rem, 7vw, 6rem); color: var(--gold); text-shadow: 0 5px 0 #000, 0 0 50px rgba(255, 176, 32, 0.6); animation: cerSlam 0.7s both; }
+.cer-drum { font-family: var(--display); font-weight: 700; letter-spacing: 0.2em; font-size: clamp(1.1rem, 2vw, 1.6rem); color: var(--ink-2); transition: opacity 0.3s; }
+.cer-award { display: flex; align-items: center; gap: 28px; padding: 18px 40px 18px 24px; border-radius: 24px; border: 4px solid var(--cls); background: linear-gradient(135deg, color-mix(in srgb, var(--cls) 28%, transparent), rgba(0, 0, 0, 0.6)); box-shadow: 0 0 90px color-mix(in srgb, var(--cls) 55%, transparent); text-align: left; animation: cerSlam 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.cer-award .nm { font-family: var(--display); font-weight: 900; font-size: clamp(2.6rem, 6vw, 5rem); line-height: 1; color: #fff; text-shadow: 0 4px 0 #000; }
+.cer-award .cl { font-family: var(--mono); letter-spacing: 0.3em; color: var(--cls); margin-top: 6px; }
+.cer-award .st { font-size: clamp(1.2rem, 2vw, 1.7rem); font-weight: 700; margin-top: 6px; }
+
+.res-rank { display: inline-flex; align-items: center; gap: 14px; margin-top: 12px; padding: 6px 22px 6px 10px; border-radius: 16px; border: 3px solid var(--rc); background: color-mix(in srgb, var(--rc) 14%, transparent); text-align: left; }
+.res-rank .l { font-family: var(--display); font-weight: 900; font-size: 3rem; line-height: 1; color: var(--rc); }
+.res-rank .k { display: block; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.25em; color: var(--ink-2); }
+.res-rank b { font-family: var(--display); font-size: 1.3rem; }
+
+/* ============================================================
+   END CEREMONY (student Chromebooks, synced to the projector)
+   ============================================================ */
+.end-live { width: min(620px, 100%); margin-top: 14px; padding: 18px; border-radius: 20px; text-align: center; border: 3px solid var(--line-2); background: rgba(0, 0, 0, 0.45); }
+.end-live .ek { font-family: var(--mono); letter-spacing: 0.25em; font-size: 0.75rem; color: var(--gold); }
+.end-live .eb { font-family: var(--display); font-weight: 900; font-size: clamp(2rem, 6vw, 3.2rem); line-height: 1.05; margin: 6px 0; animation: cerSlam 0.6s both; }
+.end-live .es { font-weight: 700; color: var(--ink-2); }
+.end-live.mine { border-color: var(--gold); background: linear-gradient(180deg, rgba(255, 176, 32, 0.28), rgba(0, 0, 0, 0.6)); box-shadow: 0 0 60px rgba(255, 176, 32, 0.5); }
+.end-live .erank { font-family: var(--display); font-weight: 900; font-size: 5rem; line-height: 1; color: var(--rc); text-shadow: 0 0 40px var(--rc); animation: cerSlam 0.6s both; }
+.my-awards { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
