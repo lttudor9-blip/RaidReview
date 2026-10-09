@@ -16,7 +16,7 @@
 //              topped up when it starts)
 export const BOSSES = {
     raider: {
-        id: 'raider', name: 'WASTELAND RAIDER', color: '#ff4757', hpPerPlayer: 9500, timeLimit: 180000,
+        id: 'raider', name: 'WASTELAND RAIDER', color: '#ff4757', hpPerPlayer: 5000, timeLimit: 150000,
         lesson: 'WARM-UP: answer, act, and talk. Shield when the Guardians are called.',
         intro: '"Let\'s see what you\'ve got, kids..."',
         attacks: [
@@ -26,17 +26,18 @@ export const BOSSES = {
         beats: [{ at: 0.5, kind: 'stagger', stun: 9000, expose: 9000, text: 'IT\'S STAGGERED! EVERY CLASS HIT IT NOW!' }]
     },
     enforcer: {
-        id: 'enforcer', name: 'ELITE ENFORCER', color: '#ffa502', hpPerPlayer: 18000, timeLimit: 210000,
+        id: 'enforcer', name: 'ELITE ENFORCER', color: '#ffa502', hpPerPlayer: 9000, timeLimit: 180000,
         lesson: 'PROTECT THE WEAK: the Rail Shot hunts whoever is lowest on health.',
         intro: '"Your luck just ran out."',
         attacks: [
             { id: 'suppress', name: 'SUPPRESSING FIRE', kind: 'strike', targets: 3, dmg: 0.3, cooldown: 18000, windup: 5000 },
             { id: 'rail', name: 'RAIL SHOT', kind: 'lowest', targets: 3, dmg: 0.85, cooldown: 28000, windup: 10000, roleCall: 'TACTICIAN', callText: 'JAM THE RIFLE' },
             { id: 'flash', name: 'FLASHBANG', kind: 'aoe', dmg: 0.3, cooldown: 40000, windup: 10000, roleCall: 'GUARDIAN', callText: 'SHIELD UP' }
-        ]
+        ],
+        beats: [{ at: 0.5, kind: 'stagger', stun: 7000, expose: 7000, text: 'IT\'S STAGGERED! EVERY CLASS HIT IT NOW!' }]
     },
     construct: {
-        id: 'construct', name: 'APEX CONSTRUCT', color: '#a55eea', hpPerPlayer: 23000, timeLimit: 240000,
+        id: 'construct', name: 'APEX CONSTRUCT', color: '#a55eea', hpPerPlayer: 10500, timeLimit: 210000,
         lesson: 'THE VIRUS: it spreads. Medics cure it, Guardian shields block it.',
         intro: '"THREAT DETECTED. UPLOADING VIRUS."',
         virus: { spreadMs: 6000, dmg: 0.07, overloadShare: 0.4, overloadDmg: 0.25, overloadCd: 20000 },
@@ -44,10 +45,11 @@ export const BOSSES = {
             { id: 'virus', name: 'VIRUS UPLOAD', kind: 'infect', targets: 2, dmg: 0.08, cooldown: 22000, windup: 5000 },
             { id: 'pulse', name: 'SYSTEM PULSE', kind: 'aoe', dmg: 0.45, cooldown: 32000, windup: 10000, roleCall: 'TACTICIAN', callText: 'JAM THE SIGNAL' },
             { id: 'lock', name: 'LOCK ON', kind: 'lowest', targets: 3, dmg: 0.75, cooldown: 30000, windup: 10000, roleCall: 'MEDIC', callText: 'PATCH THEM UP' }
-        ]
+        ],
+        beats: [{ at: 0.5, kind: 'stagger', stun: 7000, expose: 7000, text: 'SYSTEM CRASH! EVERY CLASS HIT IT NOW!' }]
     },
     omega: {
-        id: 'omega', name: 'OMEGA WEAPON', color: '#ff2a3d', hpPerPlayer: 38000, timeLimit: 360000,
+        id: 'omega', name: 'OMEGA WEAPON', color: '#ff2a3d', hpPerPlayer: 22000, timeLimit: 300000,
         lesson: 'THE FINAL TEST: everything you\'ve learned, then a last stand that needs every class.',
         intro: '"This is where it ends. For ALL of you."',
         virus: { spreadMs: 8000, dmg: 0.06, overloadShare: 0.5, overloadDmg: 0.25, overloadCd: 25000 },
@@ -74,7 +76,7 @@ export const PHASES = [
 // `stackMs` until the squad finishes it or wipes. Too slow means you lose.
 export const TIMER_ENRAGE = { speed: 1.35, dmg: 1.2, stackMs: 20000, stackDmg: 0.25, stackSpeed: 0.1 };
 
-export const ROLE_CALL_REFLECT = 0.04;  // a successful role call reflects 4% of boss max HP
+export const ROLE_CALL_REFLECT = 0.08;  // a successful role call reflects 8% of boss max HP: teamwork takes big chunks
 export const INFECTION_SPREAD_MS = 8000; // default if a boss doesn't set its own virus
 export const MIN_SCALING_PLAYERS = 3;   // boss HP never scales below 3 players
 export const WIPE_REGROUP_MS = 8000;
@@ -91,6 +93,6 @@ export const FORMATS = {
 
 export const DIFFICULTY = {
     elementary: { id: 'elementary', label: 'Elementary', desc: 'Forgiving: more HP, a softer boss, longer timers. Start here with a new class or tough material', wrongDmg: 0.05, playerHp: 1.3, bossHp: 0.65, bossDmg: 0.85, time: 1.25, windup: 1.3, cooldownMod: -1, reviveNeed: 2 },
-    regular: { id: 'regular', label: 'Regular', desc: 'A real raid. Squads that talk to each other win; squads that don\'t, wipe', wrongDmg: 0.08, playerHp: 1, bossHp: 1, bossDmg: 1.45, time: 1, windup: 1, cooldownMod: 0, reviveNeed: 3 },
-    heroic: { id: 'heroic', label: 'Heroic', desc: 'Brutal. For veteran squads who want to earn it', wrongDmg: 0.12, playerHp: 0.85, bossHp: 1.7, bossDmg: 3.2, time: 0.95, windup: 0.75, cooldownMod: 0, reviveNeed: 3 }
+    regular: { id: 'regular', label: 'Regular', desc: 'A real raid. Squads that talk to each other win; squads that don\'t, wipe', wrongDmg: 0.08, playerHp: 1, bossHp: 1, bossDmg: 1.15, time: 1, windup: 1, cooldownMod: 0, reviveNeed: 3 },
+    heroic: { id: 'heroic', label: 'Heroic', desc: 'Brutal. For veteran squads who want to earn it', wrongDmg: 0.12, playerHp: 0.85, bossHp: 1.5, bossDmg: 2.0, time: 0.95, windup: 0.75, cooldownMod: 0, reviveNeed: 3 }
 };

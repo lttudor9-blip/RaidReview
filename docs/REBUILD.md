@@ -103,17 +103,33 @@ of truth, harder to cheat, all game logic in one place.
   | Solved | Full heal, plus a bonus against the next boss |
   | Failed | No heal, and the next boss is tougher (`state.nextMods`, applied in `startBoss`) |
 
-**Balance.** The goal is that squads which talk to each other win and squads which don't, wipe. Run `npm run sim` (40 runs per scenario) to check. The current results:
+**Balance.** The goal is that squads which talk to each other win and squads which don't, wipe. Run `npm run sim` (40 runs per scenario) to check. The simulator assumes about 12 seconds per answer, a realistic classroom pace. The current results (after the "anti-sponge" pass, see below):
 
 | Scenario | Difficulty | Win rate |
 | --- | --- | --- |
-| Good teamwork | Regular | ~100%, with the final boss close to its timer |
-| So-so teamwork | Regular | ~78% |
-| Poor teamwork | Regular | ~0% |
-| All Warriors | Regular | ~35% |
-| 6 students | Regular | ~80% |
-| Struggling class | Elementary | ~60% |
-| Strong class | Heroic | ~75% |
+| Good teamwork | Regular | ~95% |
+| So-so teamwork | Regular | ~70% |
+| Poor teamwork | Regular | ~5% |
+| All Warriors | Regular | 0% |
+| 6 students | Regular | ~65% |
+| Struggling class | Elementary | ~55% |
+| Strong class | Heroic | ~48% |
+
+**Anti-sponge pass (after playtest 2).** The teachers said the bosses felt like health sponges. At a real classroom pace, fights were running about twice as long as intended. Changes:
+- Boss HP is cut about in half (5000 / 9000 / 10500 / 22000 per player), and the timers are shorter to match.
+- Bosses 2 and 3 now stagger at 50% too, like the Raider: a burst window where every class hits it.
+- A met role call takes 8% of the boss's HP.
+- Winning the Last Stand takes 15% of the final boss's HP.
+- Boss damage is tuned so the shorter fights still need teamwork.
+
+Typical fight lengths, Regular difficulty, good teamwork:
+
+| Boss | Fight length |
+| --- | --- |
+| Raider | ~75s |
+| Enforcer | ~90s |
+| Construct | ~2 min |
+| Omega | ~3 min |
 
 Running out of time matters. The boss enrages when the timer ends, then gets stronger every 20 seconds.
 

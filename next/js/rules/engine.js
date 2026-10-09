@@ -575,7 +575,7 @@ function countLastStand(state, p, now, ev) {
     if (ls.need.every(c => ls.who[c])) {
         const b = state.boss;
         ls.done = true;
-        const dmg = Math.round(b.maxHp * 0.1);
+        const dmg = Math.round(b.maxHp * 0.15);
         b.hp = Math.max(0, b.hp - dmg);
         b.stunUntil = now + 8000;
         b.exposedUntil = now + 12000; b.exposeBonus = 0.4; b.exposedBy = null;

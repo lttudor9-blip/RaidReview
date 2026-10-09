@@ -55,7 +55,7 @@ function choose(s, p, now, rng, teamwork) {
     }
 }
 
-export function simulateRaid({ students = 24, mix = null, accuracy = 0.75, answerSecs = 7, teamwork = 0.7, difficulty = 'regular', format = 'full', seed = 1 } = {}) {
+export function simulateRaid({ students = 24, mix = null, accuracy = 0.75, answerSecs = 12, teamwork = 0.7, difficulty = 'regular', format = 'full', seed = 1 } = {}) {
     const rng = rngFrom(seed);
     const s = createRaid({ difficulty });
     const classes = mix || CLASS_IDS;
@@ -138,9 +138,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     summarize('Same class, poor teamwork (20%)', runs({ teamwork: 0.2 }));
     summarize('Warrior-heavy class (half Warriors)', runs({ mix: ['WARRIOR', 'GUARDIAN', 'WARRIOR', 'MEDIC', 'WARRIOR', 'TACTICIAN'] }));
     summarize('All Warriors', runs({ mix: ['WARRIOR'] }));
-    summarize('Struggling class (55% accuracy, 9s answers)', runs({ accuracy: 0.55, answerSecs: 9 }));
+    summarize('Struggling class (55% accuracy, 15s answers)', runs({ accuracy: 0.55, answerSecs: 15 }));
     summarize('Small group (6 students)', runs({ students: 6 }));
-    summarize('Elementary difficulty, 60% accuracy', runs({ difficulty: 'elementary', accuracy: 0.6, answerSecs: 9 }));
-    summarize('Struggling class on Elementary (55%, 9s, so-so teamwork)', runs({ difficulty: 'elementary', accuracy: 0.55, answerSecs: 9, teamwork: 0.45 }));
+    summarize('Elementary difficulty, 60% accuracy', runs({ difficulty: 'elementary', accuracy: 0.6, answerSecs: 15 }));
+    summarize('Struggling class on Elementary (55%, 15s, so-so teamwork)', runs({ difficulty: 'elementary', accuracy: 0.55, answerSecs: 15, teamwork: 0.45 }));
     summarize('Heroic difficulty, strong class (85%)', runs({ difficulty: 'heroic', accuracy: 0.85 }));
 }

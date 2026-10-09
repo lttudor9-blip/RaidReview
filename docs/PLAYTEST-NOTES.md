@@ -41,3 +41,9 @@ What was really going on:
 3. Leaderboards
 4. Loot drops, or a class vote on an upgrade, skill-tree perk or power-up after each wave
 5. More boss mechanics
+
+**Teacher feedback:** the bosses felt like health sponges, even with the upgrades.
+
+| # | Where | What happened | Fix |
+|---|---|---|---|
+| 8 | Boss fights | Fights dragged on, about twice as long as intended at a real classroom pace | Boss HP is cut about in half, and there are more burst moments: a stagger at 50% on bosses 2 and 3, bigger role-call chunks, and a Last Stand win that takes 15% of the final boss's HP. Typical fights now last 1:15 / 1:30 / 2:00 / 3:00. Next build: new mechanics that speed fights up instead of slowing them down. |
